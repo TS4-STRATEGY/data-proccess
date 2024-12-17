@@ -10,13 +10,17 @@ import com.bestool.dataproccessor.utils.Utils.Companion.parseDateWithFallback
 import com.bestool.dataproccessor.utils.Utils.Companion.parseDoubleOrDefault
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import org.hibernate.exception.ConstraintViolationException
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 import java.io.*
+import java.sql.SQLIntegrityConstraintViolationException
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipEntry
@@ -68,7 +72,7 @@ class DirectoryProcessorService(
     fun processDirectoryAsync() {
         precargarCatalogos()
         val currentStatus = readOrInitializeStatus()
-        // Verificar si ya hay un proceso en ejecución
+
         if (currentStatus == "INICIADO") {
             logger.info("Ya hay un proceso en ejecución.")
             return
@@ -77,12 +81,8 @@ class DirectoryProcessorService(
         updateStatus("INICIADO")
 
         try {
-            // Lógica de procesamiento aquí
-
-
             val processedFiles = getProcessedFiles(processedFilesFile)
             val directory = File(directoryPath)
-
 
             if (!directory.exists() || !directory.isDirectory) {
                 logger.error("El directorio no existe o no es válido: $directoryPath")
@@ -90,38 +90,45 @@ class DirectoryProcessorService(
             }
 
             val processedDirectory = File(processedPath)
-            if (!processedDirectory.exists()) {
-                processedDirectory.mkdirs()
-            }
+            if (!processedDirectory.exists()) processedDirectory.mkdirs()
+
+            // Lista de archivos filtrados
+            val filesToProcess = directory.walkTopDown()
+                .filter { it.isFile }
+                .filterNot { it.name in processedFiles }
+                .sortedBy { it.length() }
+                .toList()
+
+            // Limitar el número de tareas concurrentes
+            val maxConcurrentTasks = 4
 
             runBlocking {
-                directory.walkTopDown()
-                    .filter { it.isFile }
-                    .filterNot { it.name in processedFiles }
-                    .sortedBy { it.length() }
-                    .map { file ->
-                        async(Dispatchers.IO) {
-                            try {
-                                if (file.extension.equals("zip", ignoreCase = true)) {
-                                    processZipFile(file)
-                                } else {
-                                    processLargeFile(file)
-                                }
-                                moveToProcessed(file, processedDirectory)
-                                markFileAsProcessed(processedFilesFile,file.name)
-                            } catch (e: Exception) {
-                                logger.error("Error al procesar el archivo: ${file.name}", e)
-                            }
-                        }
-                    }.forEach { it.await() }
+                filesToProcess.chunked((filesToProcess.size / maxConcurrentTasks).coerceAtLeast(1))
+                    .map { chunk ->
+                        async(Dispatchers.IO) { processFileChunk(chunk, processedDirectory) }
+                    }.awaitAll()
             }
 
             updateStatus("COMPLETADO")
-
-
         } catch (e: Exception) {
             updateStatus("ERROR: ${e.message}")
             logger.error("Error durante el procesamiento: ", e)
+        }
+    }
+
+    private suspend fun processFileChunk(files: List<File>, processedDirectory: File) {
+        for (file in files) {
+            try {
+                if (file.extension.equals("zip", ignoreCase = true)) {
+                    processZipFile(file)
+                } else {
+                    processLargeFile(file)
+                }
+                moveToProcessed(file, processedDirectory)
+                markFileAsProcessed(processedFilesFile, file.name)
+            } catch (e: Exception) {
+                logger.error("Error al procesar el archivo: ${file.name}", e)
+            }
         }
     }
 
@@ -152,7 +159,6 @@ class DirectoryProcessorService(
     }
 
     private fun processStream(reader: BufferedReader) {
-
         reader.forEachLine { line ->
             val delimitador = detectarDelimitador(line)
             if (delimitador != null) {
@@ -366,6 +372,35 @@ class DirectoryProcessorService(
         }
     }
 
+    private fun <T> obtenerOInsertarEnCache(
+        cache: MutableMap<String, T>,
+        descripcion: String,
+        buscarEnBD: (String) -> T?, // Función lambda para buscar en la base de datos
+        insertarEnBD: () -> T       // Función lambda para insertar en la base de datos
+    ): T {
+        return cache[descripcion] ?: synchronized(this) {
+            cache[descripcion] ?: run {
+                val existente = buscarEnBD(descripcion)
+                if (existente != null) {
+                    cache[descripcion] = existente
+                    existente
+                } else {
+                    try {
+                        val nuevaEntidad = insertarEnBD()
+                        cache[descripcion] = nuevaEntidad
+                        nuevaEntidad
+                    } catch (ex: DataIntegrityViolationException) {
+                        if (ex.cause is SQLIntegrityConstraintViolationException) {
+                            logger.warn("Registro '$descripcion' ya existe. Recuperando de la base de datos.")
+                            val recuperado = buscarEnBD(descripcion)
+                            recuperado ?: throw ex // Si no se recupera, lanza la excepción
+                        } else throw ex
+                    }
+                }
+            }
+        }
+    }
+
 
     private fun processLlamadas(values: List<String>): Boolean {
         try {
@@ -374,64 +409,42 @@ class DirectoryProcessorService(
                 return false
             }
 
-            val localidad = values.getOrNull(4)?.uppercase() ?: "DESCONOCIDA"
+            val localidadDescripcion = values.getOrNull(4)?.uppercase() ?: "DESCONOCIDA"
+            val modalidadDescripcion = values.getOrNull(11)?.uppercase() ?: return false
 
-// Verificar primero en caché
-
-            val poblacion = localidadesCache[localidad]
-                ?: synchronized(this) { // Sincronizar para evitar conflictos concurrentes
-                    // Verificar de nuevo dentro del bloque sincronizado
-                    localidadesCache[localidad] ?: run {
-                        // Si no existe en caché, verificar directamente en la base de datos
-                        val poblacionExistente = catPoblacionRepository.findByDescripcion(localidad)
-                        if (poblacionExistente != null) {
-                            localidadesCache[localidad] = poblacionExistente // Actualizar caché
-                            poblacionExistente
-                        } else {
-                            // Insertar nueva localidad
-                            val nuevaLocalidad = catPoblacionRepository.save(
-                                CatPoblacion(
-                                    descripcion = localidad.ifBlank { "DESCONOCIDA" },
-                                    nivel = 1,
-                                    activo = 1,
-                                    fechaCreacion = Date()
-                                )
-                            )
-                            localidadesCache[localidad] = nuevaLocalidad // Actualizar caché
-                            nuevaLocalidad
-                        }
-                    }
+            // Obtener o insertar localidad en caché
+            val poblacion = obtenerOInsertarEnCache(
+                cache = localidadesCache,
+                descripcion = localidadDescripcion.ifBlank { "DESCONOCIDA" },
+                buscarEnBD = { catPoblacionRepository.findByDescripcion(it) }, // Buscar en base de datos
+                insertarEnBD = {
+                    catPoblacionRepository.save(
+                        CatPoblacion(
+                            descripcion = localidadDescripcion.ifBlank { "DESCONOCIDA" },
+                            nivel = 1,
+                            activo = 1,
+                            fechaCreacion = Date()
+                        )
+                    )
                 }
+            )
 
-            val modalidad = values.getOrNull(11)?.uppercase() ?: return false
-
-// Verificar primero en caché
-            val tipoLlamada = modalidadesCache[modalidad]
-                ?: synchronized(this) { // Sincronizar para evitar conflictos concurrentes
-                    // Verificar de nuevo dentro del bloque sincronizado
-                    modalidadesCache[modalidad] ?: run {
-                        // Si no existe en caché, verificar directamente en la base de datos
-                        val tipoLlamadaExistente = catTipoLlamadaRepository.findByDescripcion(modalidad)
-                        if (tipoLlamadaExistente != null) {
-                            modalidadesCache[modalidad] = tipoLlamadaExistente // Actualizar caché
-                            tipoLlamadaExistente
-                        } else {
-                            // Insertar nueva modalidad
-                            val nuevaModalidad = catTipoLlamadaRepository.save(
-                                CatTipoLlamada(
-                                    descripcion = modalidad,
-                                    nivel = 1,
-                                    activo = 1,
-                                    fechaCreacion = Date()
-                                )
-                            )
-                            modalidadesCache[modalidad] = nuevaModalidad // Actualizar caché
-                            nuevaModalidad
-                        }
-                    }
+            // Obtener o insertar modalidad en caché
+            val tipoLlamada = obtenerOInsertarEnCache(
+                cache = modalidadesCache,
+                descripcion = modalidadDescripcion.ifBlank { "DESCONOCIDA" },
+                buscarEnBD = { catTipoLlamadaRepository.findByDescripcion(it) }, // Buscar en base de datos
+                insertarEnBD = {
+                    catTipoLlamadaRepository.save(
+                        CatTipoLlamada(
+                            descripcion = modalidadDescripcion.ifBlank { "DESCONOCIDA" },
+                            nivel = 1,
+                            activo = 1,
+                            fechaCreacion = Date()
+                        )
+                    )
                 }
-
-
+            )
             val parsedDate = parseDateWithFallback(values.getOrNull(5)?.trim(), lastValidDate)
 
             if (parsedDate != null) {
@@ -455,16 +468,33 @@ class DirectoryProcessorService(
                     idCentroCostos = values.getOrNull(15)?.toIntOrNull()
                 )
 
-                llamadasRepository.save(entity)
+
+                val existe = llamadasRepository.existsByAllFields(
+                    numFactura = values[0],
+                    operador = values.getOrNull(1),
+                    numOrigen = values.getOrNull(2),
+                    numDestino = values.getOrNull(3),
+                    localidad = poblacion.id.toString(),
+                    horaLlamada = values.getOrNull(6),
+                    duracion = values.getOrNull(7)?.toIntOrNull(),
+                    costo = cost,
+                    cargoAdicional = values.getOrNull(9)?.toDoubleOrNull(),
+                    tipoCargo = values.getOrNull(10),
+                    modalidad = tipoLlamada.id.toString(),
+                    clasificacion = values.getOrNull(12),
+                    )
+
+                if (!existe) {
+                    llamadasRepository.save(entity)
+                    logger.debug("Registro insertado exitosamente: ${entity.numFactura}")
+                }
                 return true
             } else {
+                logger.warn("Fecha inválida para el registro: $values")
                 return false
             }
-        } catch (e: ConstraintViolationException) {
-            logger.warn("Duplicate record detected: ${e.message}")
-            return true
-        } catch (e: Exception) {
-            logger.error("Error processing record", e)
+        } catch (ex: Exception) {
+            logger.error("Error processing record: $values", ex)
             return false
         }
     }

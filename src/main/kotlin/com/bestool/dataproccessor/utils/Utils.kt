@@ -2,7 +2,6 @@ package com.bestool.dataproccessor.utils
 
 
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Value
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -32,17 +31,17 @@ open class Utils {
             "Dec" to "12", "Dic" to "12"
         )
 
-        private val dateFormats = listOf(
-            SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH),
-            SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH),
-            SimpleDateFormat("MM/dd/yyyy", Locale.ENGLISH)
-        )
-
         fun parseDateWithFallback(dateString: String?, lastValidDate: Date?): Date? {
-            return parseDate(dateString) ?: run {
-                logger.warn("Using fallback date: $lastValidDate for invalid input: $dateString")
-                lastValidDate
+            try {
+                return parseDate(dateString) ?: run {
+                    logger.warn("Using fallback date: $lastValidDate for invalid input: $dateString")
+                    lastValidDate
+                }
+            } catch (e: Exception) {
+                logger.error("Unparseable date: $dateString No valid format found.")
+                return null
             }
+
         }
 
         private fun parseDate(dateString: String?): Date? {
@@ -53,74 +52,75 @@ open class Utils {
 
             val normalizedDate = normalizeAndValidateDate(dateString)
 
-            if (normalizedDate != null) {
-                logger.debug("Attempting to parse normalized date: $normalizedDate")
-
-                // Validar formato explícitamente antes de parsear
-                val datePattern = Regex("\\d{4}-\\d{2}-\\d{2}")
-                if (!datePattern.matches(normalizedDate)) {
-                    logger.error("Date does not match expected format yyyy-MM-dd: $normalizedDate")
-                    return null
-                }
-
+            if (!normalizedDate.isNullOrEmpty()) {
                 try {
-                    return dateFormats[0].parse(normalizedDate) // "yyyy-MM-dd"
+                    logger.debug("Attempting to parse normalized date: $normalizedDate")
+                    // Validar formato explícitamente antes de parsear
+                    val datePattern = Regex("\\d{4}-\\d{2}-\\d{2}")
+                    if (!datePattern.matches(normalizedDate)) {
+                        logger.error("Date does not match expected format yyyy-MM-dd: $normalizedDate")
+                        return null
+                    }
+
+                    val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                    return formatter.parse(normalizedDate)// "yyyy-MM-dd"
                 } catch (e: ParseException) {
-                    logger.error("Failed to parse normalized date: $normalizedDate", e)
+                    logger.error("Failed to parse normalized date: $normalizedDate")
                 }
             }
-
-            logger.error("Unparseable date: $dateString. No valid format found.")
             return null
         }
 
-        fun formatToSqlDate(date: java.util.Date?): java.sql.Date? {
-            return date?.let { java.sql.Date(it.time) }
-        }
 
-            private fun normalizeAndValidateDate(dateString: String?): String? {
-                if (dateString.isNullOrEmpty()) {
-                    logger.error("Date string is null or empty")
-                    return null
-                }
+        private fun normalizeAndValidateDate(dateString: String?): String? {
+            if (dateString.isNullOrEmpty()) {
+                logger.error("Date string is null or empty")
+                return null
+            }
 
-                // Reemplazar puntos con guiones para normalizar el formato
+            try {
+                // Limpiar y normalizar la fecha
                 var cleanedDate = dateString.replace(".", "-")
-                    .trim().replace(" ", "-")
-                    .trim().replace("/", "-")
+                    .replace("/", "-")
+                    .replace(" ", "-")
+                    .trim()
 
-                val datePattern2 =
-                    Regex("(?i)\\d{4}-(Jan|Ene|Feb|Mar|Abr|Apr|May|Jun|Jul|Ago|Aug|Sep|Oct|Nov|Dic|Dec)-\\d{2}\n")
-                val datePattern = Regex("\\d{4}-\\d{2}-\\d{2}")
+                val datePatternStrict = Regex("^\\d{4}-\\d{2}-\\d{2}\$")
+                val datePatternWithMonth = Regex("(?i)\\d{4}-(Jan|Ene|Feb|Mar|Abr|Apr|May|Jun|Jul|Ago|Aug|Sep|Oct|Nov|Dic|Dec)-\\d{2}")
 
-                if (!datePattern.matches(cleanedDate)) {
-                    if (datePattern2.matches(cleanedDate)) {
-                        val parts = cleanedDate.split("-")
-                        val year = parts[0]
-                        val month = parts[1].capitalize() // Asegura la capitalización correcta
-                        val day = parts[2]
-
-                        // Convertir el mes a su valor numérico
-                        val numericMonth = monthMap[month]
-
-                        if (numericMonth != null) {
-                            cleanedDate = "$year-$numericMonth-$day" // Retorna la fecha convertida
-                        }
-                    } else {
-                        logger.error("Date string is not in the expected format yyyy-MMM-dd: $cleanedDate")
-                    }
-                }
-
-
-                // Validar año
-                val year = cleanedDate.substring(0, 4).toIntOrNull()
-                if (year == null || year !in -4713..9999) {
+                // Caso 1: Fecha en formato estricto yyyy-MM-dd
+                if (datePatternStrict.matches(cleanedDate)) {
+                    val year = cleanedDate.substring(0, 4).toInt()
+                    if (year in -4713..9999) return cleanedDate
                     logger.error("Year out of range: $year in date string: $cleanedDate")
                     return null
                 }
 
-                return cleanedDate
+                // Caso 2: Fecha con nombres de mes yyyy-MMM-dd
+                if (datePatternWithMonth.matches(cleanedDate)) {
+                    val parts = cleanedDate.split("-")
+                    val year = parts[0].toIntOrNull()
+                    val month = parts[1].lowercase(Locale.getDefault()).replaceFirstChar { it.uppercase() }
+                    val day = parts[2]
+
+                    // Validar y convertir el mes
+                    val numericMonth = monthMap[month]
+                    if (year != null && numericMonth != null && year in -4713..9999) {
+                        return "$year-$numericMonth-$day"
+                    } else {
+                        logger.error("Invalid month or year: $cleanedDate")
+                        return null
+                    }
+                }
+
+                logger.error("Date string does not match expected formats: $cleanedDate")
+                return null
+
+            } catch (e: Exception) {
+                logger.error("Error during date normalization: ${e.message}")
+                return null
             }
+        }
 
         fun moveToProcessed(file: File, processedDirectory: File) {
             val target = File(processedDirectory, file.name)

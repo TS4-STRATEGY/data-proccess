@@ -8,15 +8,7 @@ interface BTDetalleCargosRepository : JpaRepository<BTDetalleCargos, Long> {
     @Query(
         "SELECT CASE WHEN COUNT(b) > 0 THEN TRUE ELSE FALSE END " +
                 "FROM BTDetalleCargos b " +
-                "WHERE b.numFactura = :numFactura " +
-                "AND (:operador IS NULL OR b.operador = :operador) " +
-                "AND (:tipoCargo IS NULL OR b.tipoCargo = :tipoCargo) " +
-                "AND (:monto IS NULL OR b.monto = :monto)"
+                "WHERE b.identificadorUnico = :idUnique "
     )
-    fun existsByNumFacturaAndOperadorAndTipoCargoAndMonto(
-        numFactura: String,
-        operador: String?,
-        tipoCargo: String?,
-        monto: Double?
-    ): Boolean
+    fun existsByIdentificadorUnico(idUnique: String): Boolean
 }

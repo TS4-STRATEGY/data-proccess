@@ -57,7 +57,6 @@ data class BTDetalleFactura(
     @Column(name = "BDF_ACTIVO") val activo: Int
 ) {
     constructor() : this(
-        id = 0,
         numFactura = "",
         referencia = null,
         operador = null,

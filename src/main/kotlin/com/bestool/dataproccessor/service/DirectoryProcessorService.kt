@@ -6,20 +6,18 @@ import com.bestool.dataproccessor.utils.Utils.Companion.detectarDelimitador
 import com.bestool.dataproccessor.utils.Utils.Companion.getProcessedFiles
 import com.bestool.dataproccessor.utils.Utils.Companion.markFileAsProcessed
 import com.bestool.dataproccessor.utils.Utils.Companion.moveToProcessed
-import com.bestool.dataproccessor.utils.Utils.Companion.parseDateWithFallback
+import com.bestool.dataproccessor.utils.Utils.Companion.parseDate
+import com.bestool.dataproccessor.utils.Utils.Companion.parseDateBill
 import com.bestool.dataproccessor.utils.Utils.Companion.parseDoubleOrDefault
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.runBlocking
-import org.hibernate.exception.ConstraintViolationException
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.dao.DataIntegrityViolationException
-import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
-import java.io.*
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.IOException
 import java.sql.SQLIntegrityConstraintViolationException
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
@@ -30,13 +28,17 @@ import java.util.zip.ZipInputStream
 class DirectoryProcessorService(
     @Value("\${directory.input.path}") private val directoryPath: String,
     @Value("\${directory.processed.path}") private val processedPath: String,
+    @Value("\${directory.failed.path}") private val failedPath: String,
     private val catPoblacionRepository: CatPoblacionRepository,
     private val catTipoLlamadaRepository: CatTipoLlamadaRepository,
     private val facturaRepository: BTDetalleFacturaRepository,
     private val cargosRepository: BTDetalleCargosRepository,
-    private val llamadasRepository: BTDetalleLlamadasRepository
-    ) {
+    private val llamadasRepository: BTDetalleLlamadasRepository,
+    private val batchRepository: BatchRepository,
 
+    ) {
+    private lateinit var processedDirectory: File
+    private lateinit var failedDirectory: File
     private val logger = LoggerFactory.getLogger(DirectoryProcessorService::class.java)
     private val statusFile = File(directoryPath, "processing_status.txt")
     private val processedFilesFile = File("$processedPath/processed_files.txt")
@@ -81,7 +83,7 @@ class DirectoryProcessorService(
         updateStatus("INICIADO")
 
         try {
-            val processedFiles = getProcessedFiles(processedFilesFile)
+
             val directory = File(directoryPath)
 
             if (!directory.exists() || !directory.isDirectory) {
@@ -89,25 +91,57 @@ class DirectoryProcessorService(
                 return
             }
 
-            val processedDirectory = File(processedPath)
+            processedDirectory = File(processedPath)
             if (!processedDirectory.exists()) processedDirectory.mkdirs()
 
-            // Lista de archivos filtrados
-            val filesToProcess = directory.walkTopDown()
-                .filter { it.isFile }
-                .filterNot { it.name in processedFiles }
-                .sortedBy { it.length() }
-                .toList()
 
-            // Limitar el número de tareas concurrentes
-            val maxConcurrentTasks = 4
+            failedDirectory = File(failedPath)
+            if (!failedDirectory.exists()) failedDirectory.mkdirs()
 
-            runBlocking {
-                filesToProcess.chunked((filesToProcess.size / maxConcurrentTasks).coerceAtLeast(1))
-                    .map { chunk ->
-                        async(Dispatchers.IO) { processFileChunk(chunk, processedDirectory) }
-                    }.awaitAll()
+            getProcessedFiles(processedFilesFile)
+
+            logger.info("DESCOMPRIMIENDO DATA: ")
+            val zips = directory.walkTopDown()
+                .filter { it.isFile && it.extension.equals("zip", ignoreCase = true) }
+                .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }
+                .toList().sortedBy { it.length() }
+
+            zips.forEach { file ->
+                processZipFile(file)
             }
+
+            logger.info("PROCESANDO FACTURAS: ")
+            val bills = directory.walkTopDown()
+                .filter { it.isFile && it.extension.equals("crt", ignoreCase = true) }
+                .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }
+                .toList().sortedBy { it.length() }
+
+            bills.forEach { file ->
+                processCRTFile(file)
+            }
+
+            logger.info("PROCESANDO CARGOS: ")
+            val charges = directory.walkTopDown()
+                .filter { it.isFile && it.extension.equals("crg", ignoreCase = true) }
+                .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }
+                .toList().sortedBy { it.length() }
+
+            charges.forEach { file ->
+                processCRGFile(file)
+            }
+
+            logger.info("PROCESANDO DETALLE DE LLAMADAS: ")
+            val details = directory.walkTopDown()
+                .filter { it.isFile && it.extension.equals("ll", ignoreCase = true) }
+                .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }
+                .toList()
+                .sortedBy { it.length() }
+
+            removeDuplicates(details).forEach { file ->
+                processLLFile(file)
+            }
+
+
 
             updateStatus("COMPLETADO")
         } catch (e: Exception) {
@@ -116,83 +150,173 @@ class DirectoryProcessorService(
         }
     }
 
-    private suspend fun processFileChunk(files: List<File>, processedDirectory: File) {
-        for (file in files) {
-            try {
-                if (file.extension.equals("zip", ignoreCase = true)) {
-                    processZipFile(file)
-                } else {
-                    processLargeFile(file)
-                }
+
+    private fun removeDuplicates(files: List<File>): List<File> {
+        val uniqueFilesMap = mutableMapOf<String, File>()
+
+        files.forEach { file ->
+            val key = "${file.nameWithoutExtension}-${file.length()}" // Clave única: nombre base y tamaño
+            if (!uniqueFilesMap.containsKey(key)) {
+                uniqueFilesMap[key] = file // Agregar el primer archivo encontrado
+            } else {
+                // Si ya existe en el mapa, es un duplicado
                 moveToProcessed(file, processedDirectory)
                 markFileAsProcessed(processedFilesFile, file.name)
-            } catch (e: Exception) {
-                logger.error("Error al procesar el archivo: ${file.name}", e)
+                logger.info("Duplicado movido a procesados: ${file.path}")
             }
         }
+
+        return uniqueFilesMap.values.toList() // Retornar solo archivos únicos
     }
 
     private fun processZipFile(zipFile: File) {
+        val zipParentDirectory = zipFile.parentFile // Obtiene el directorio donde se encuentra el ZIP
+
         ZipInputStream(FileInputStream(zipFile)).use { zis ->
             var entry: ZipEntry?
+
             try {
                 while (zis.nextEntry.also { entry = it } != null) {
-                    if (!entry!!.isDirectory) {
-                        logger.info("Procesando archivo dentro del ZIP: ${entry!!.name}")
-                         zis.bufferedReader().use { reader ->
-                            processStream(reader)
+                    if (entry!!.isDirectory) {
+                        // Crear subdirectorios si el ZIP contiene carpetas
+                        val dir = File(zipParentDirectory, entry!!.name)
+                        if (!dir.exists()) dir.mkdirs()
+                        logger.info("Directorio creado: ${dir.absolutePath}")
+                    } else {
+                        // Crear archivo dentro del mismo directorio del ZIP
+                        val outputFile = File(zipParentDirectory, entry!!.name)
+                        outputFile.parentFile.mkdirs() // Asegúrate de que los directorios existan
+
+                        logger.info("Extrayendo archivo dentro del ZIP: ${entry!!.name} a ${outputFile.absolutePath}")
+
+                        try {
+                            // Escribir el contenido del archivo ZIP en el archivo físico
+                            FileOutputStream(outputFile).use { fos ->
+                                zis.copyTo(fos)
+                            }
+
+                            logger.info("Archivo extraído exitosamente: ${outputFile.absolutePath}")
+                        } catch (e: IOException) {
+                            logger.error("Error al escribir archivo descomprimido: ${outputFile.name}", e)
                         }
                     }
-                    zis.closeEntry() // Asegúrate de cerrar cada entrada después de procesarla
+                    zis.closeEntry() // Cierra la entrada después de procesarla
                 }
+
+                // Si todo el ZIP fue procesado correctamente, muévelo a procesados
+                moveToProcessed(zipFile, processedDirectory)
+                markFileAsProcessed(processedFilesFile, zipFile.name)
+
             } catch (e: IOException) {
                 logger.error("Error al procesar el archivo ZIP: ${zipFile.name}", e)
+                // Si el procesamiento del ZIP falla, moverlo a fallidos
+                moveToProcessed(zipFile, failedDirectory)
             }
         }
     }
 
-    private fun processLargeFile(file: File) {
+
+    private fun processCRTFile(file: File) {
         logger.info("Procesando archivo grande: ${file.name} (${file.length()} bytes)")
+
         file.bufferedReader().use { reader ->
-            processStream(reader)
-        }
-    }
+            if (file.extension.equals("crt", ignoreCase = true)) {
+                val records = mutableListOf<StringBuilder>() // Lista para almacenar registros
+                var currentRecord = StringBuilder()
 
-    private fun processStream(reader: BufferedReader) {
-        reader.forEachLine { line ->
-            val delimitador = detectarDelimitador(line)
-            if (delimitador != null) {
-                val values = line.split(delimitador)
-                val columnCount = values.size
-
-              val tableName= when (columnCount) {
-                    in 4..7 -> "BT_DETALLE_CARGOS"
-                    in 13..17 -> "BT_DETALLE_LLAMADAS"
-                    46 -> "BT_DETALLE_FACTURA"
-                    else -> null
-                }
-
-                try {
-                    when (tableName) {
-                        "BT_DETALLE_FACTURA" -> {
-                           processFactura(values)
+                // Leer línea por línea y agrupar registros
+                reader.forEachLine { line ->
+                    if (line.startsWith("OFF-")) {
+                        // Si detectamos un nuevo registro, guardamos el anterior
+                        if (currentRecord.isNotEmpty()) {
+                            records.add(currentRecord)
                         }
-
-                        "BT_DETALLE_CARGOS" -> {
-                            processCargos(values)
-                        }
-
-                        "BT_DETALLE_LLAMADAS" -> {
-                            processLlamadas(values)
-                        }
+                        currentRecord = StringBuilder(line) // Nuevo registro
+                    } else {
+                        // Agregar la línea al registro actual
+                        currentRecord.append(" ").append(line.trim())
                     }
-
-                } catch (e: Exception) {
-                    logger.error("Error processing record in values: ${values}", e)
                 }
+
+                // Agregar el último registro
+                if (currentRecord.isNotEmpty()) {
+                    records.add(currentRecord)
+                }
+
+                // Procesar todos los registros y determinar el estado global
+                val allSuccessful = records.all { record ->
+                    processFactura(record.toString().split("|"))
+                }
+
+                // Mover el archivo basado en el estado global
+                if (allSuccessful) {
+                    moveToProcessed(file, processedDirectory)
+                } else {
+                    moveToProcessed(file, failedDirectory)
+                }
+
+                // Marcar el archivo como procesado
+                markFileAsProcessed(processedFilesFile, file.name)
             }
         }
+
     }
+
+    private fun processCRGFile(file: File) {
+        logger.info("Procesando archivo: ${file.name} (${file.length()} bytes)")
+
+        file.bufferedReader().useLines { lines ->
+            if (lines.none()) {
+                logger.error("El archivo ${file.name} está vacío y no se puede procesar.")
+                moveToProcessed(file, failedDirectory)
+                return // Salir del método sin procesar el archivo
+            }
+            val allSuccessful = lines.mapIndexed { index, line ->
+                processCargos(
+                    line.split("|"),
+                    file.name,
+                    index + 1
+                ) // `index + 1` para que el número de línea sea 1-based
+            }.reduce { acc, result -> acc && result }
+            // Mover el archivo basado en el estado global
+            if (allSuccessful) {
+                moveToProcessed(file, processedDirectory)
+            } else {
+                moveToProcessed(file, failedDirectory)
+            }
+
+            // Marcar el archivo como procesado
+            markFileAsProcessed(processedFilesFile, file.name)
+        }
+    }
+
+    private fun processLLFile(file: File) {
+        logger.info("Procesando archivo: ${file.name} (${file.length()} bytes)")
+        file.bufferedReader().useLines { lines ->
+            var allSuccessful = true
+
+            lines.forEach { line ->
+                // Si algún procesamiento falla, marcar como no exitoso
+                if (!processLlamadas(line.split("|"))) {
+                    allSuccessful = false
+                }
+            }
+
+            // Mover el archivo basado en el estado global
+            if (allSuccessful) {
+                moveToProcessed(file, processedDirectory)
+            } else {
+                moveToProcessed(file, failedDirectory)
+            }
+
+            // Marcar el archivo como procesado
+            markFileAsProcessed(processedFilesFile, file.name)
+        }
+    }
+
+
+
+    val entities = mutableListOf<BTDetalleLlamadas>()
 
 
     // Lee o inicializa el estado del archivo
@@ -229,148 +353,113 @@ class DirectoryProcessorService(
     }
 
 
-    private var lastValidDate: Date? = null
-
     private fun processFactura(values: List<String>): Boolean {
-        if (values.size < 34) {
-            logger.warn("Invalid record format for BT_DETALLE_FACTURA: $values")
+        if (values.size < 43) {
+            logger.warn("Registro inválido: se esperaban al menos 43 campos, se recibieron ${values.size}. Valores: $values")
             return false
         }
 
-        try {
+        return try {
+            val numFactura = values[0].takeIf { it.isNotBlank() }
+                ?: throw IllegalArgumentException("El campo numFactura es obligatorio y está vacío")
+
             val entity = BTDetalleFactura(
-                numFactura = values[0],
-                referencia = values.getOrNull(1),
+                numFactura = numFactura,
+                referencia = values.getOrNull(24),
                 operador = values.getOrNull(2),
-                fechaEmision = values.getOrNull(3)?.let { parseDateWithFallback(it, lastValidDate) },
-                fechaVencimiento = values.getOrNull(4)?.let { parseDateWithFallback(it, lastValidDate) },
-                fechaCorte = values.getOrNull(5)?.let { parseDateWithFallback(it, lastValidDate) },
+                fechaEmision = values.getOrNull(3)?.let { parseDateBill(it) },
+                fechaVencimiento = values.getOrNull(4)?.let { parseDateBill(it) },
+                fechaCorte = values.getOrNull(5)?.let { parseDateBill(it) },
                 moneda = values.getOrNull(6),
                 tipoMoneda = values.getOrNull(7),
-                iva = values.getOrNull(8)?.toDoubleOrNull(),
-                subtotal = values.getOrNull(9)?.toDoubleOrNull(),
-                impuestos = values.getOrNull(10)?.toDoubleOrNull(),
-                total = values.getOrNull(11)?.toDoubleOrNull(),
+                iva = values.getOrNull(8)?.toDoubleOrNull() ?: 0.0,
+                subtotal = values.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
+                impuestos = values.getOrNull(10)?.toDoubleOrNull() ?: 0.0,
+                total = values.getOrNull(11)?.toDoubleOrNull() ?: 0.0,
                 totalLetra = values.getOrNull(12),
                 saldoAnterior = values.getOrNull(13)?.toDoubleOrNull(),
-                descuento = values.getOrNull(14)?.toDoubleOrNull(),
-                otrosCargos = values.getOrNull(15)?.toDoubleOrNull(),
-                subtotal2 = values.getOrNull(16)?.toDoubleOrNull(),
-                impuestos2 = values.getOrNull(17)?.toDoubleOrNull(),
-                total2 = values.getOrNull(18)?.toDoubleOrNull(),
-                totalFinal = values.getOrNull(19)?.toDoubleOrNull(),
-                nombreCliente = values.getOrNull(20),
-                descripcionCliente = values.getOrNull(21),
-                sucursal = values.getOrNull(22),
-                numeroCuenta = values.getOrNull(23),
-                rfc = values.getOrNull(24),
-                referenciaAdicional = values.getOrNull(25),
+                descuento = values.getOrNull(14)?.toDoubleOrNull() ?: 0.0,
+                otrosCargos = values.getOrNull(15)?.toDoubleOrNull() ?: 0.0,
+                subtotal2 = values.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
+                impuestos2 = values.getOrNull(10)?.toDoubleOrNull(),
+                total2 = values.getOrNull(11)?.toDoubleOrNull(),
+                totalFinal = values.getOrNull(20)?.toDoubleOrNull(),
+                nombreCliente = values.getOrNull(21),
+                descripcionCliente = values.getOrNull(22),
+                sucursal = values.getOrNull(23),
+                numeroCuenta = values.getOrNull(24),
+                rfc = values.getOrNull(25),
+                referenciaAdicional = "",
                 nombreClienteAdicional = values.getOrNull(26),
                 domicilio = values.getOrNull(27),
-                ubicacion = values.getOrNull(28),
-                localidad = values.getOrNull(29),
-                estado = values.getOrNull(30),
-                municipio = values.getOrNull(31),
-                codigoPostal = values.getOrNull(32),
-                pais = values.getOrNull(33),
-                domicilioFiscal = values.getOrNull(34),
-                ubicacionFiscal = values.getOrNull(35),
-                localidadFiscal = values.getOrNull(36),
-                estadoFiscal = values.getOrNull(37),
-                municipioFiscal = values.getOrNull(38),
-                codigoPostalFiscal = values.getOrNull(39),
-                numFacturacion = values.getOrNull(40),
-                paisFiscal = values.getOrNull(41),
-                notas = values.getOrNull(42),
+                ubicacion = values.getOrNull(30),
+                localidad = values.getOrNull(31),
+                estado = values.getOrNull(32),
+                municipio = values.getOrNull(33),
+                codigoPostal = values.getOrNull(34),
+                pais = values.getOrNull(35),
+                domicilioFiscal = values.getOrNull(36),
+                ubicacionFiscal = values.getOrNull(37),
+                localidadFiscal = values.getOrNull(38),
+                estadoFiscal = values.getOrNull(39),
+                municipioFiscal = values.getOrNull(40),
+                codigoPostalFiscal = values.getOrNull(41),
+                numFacturacion = values.getOrNull(41) ?: "N/A",
+                paisFiscal = values.getOrNull(35),
+                notas = "",
                 fechaCreacion = Date(),
                 activo = 0
             )
 
-            val isDuplicate = facturaRepository.existsByAllFields(
-                entity.numFactura,
-                entity.referencia,
-                entity.operador,
-                entity.fechaEmision,
-                entity.fechaVencimiento,
-                entity.fechaCorte,
-                entity.moneda,
-                entity.tipoMoneda,
-                entity.iva,
-                entity.subtotal,
-                entity.impuestos,
-                entity.total,
-                entity.totalLetra,
-                entity.saldoAnterior,
-                entity.descuento,
-                entity.otrosCargos,
-                entity.subtotal2,
-                entity.impuestos2,
-                entity.total2,
-                entity.totalFinal,
-                entity.nombreCliente,
-                entity.descripcionCliente,
-                entity.sucursal,
-                entity.numeroCuenta,
-                entity.rfc,
-                entity.referenciaAdicional,
-                entity.nombreClienteAdicional,
-                entity.domicilio,
-                entity.ubicacion,
-                entity.localidad,
-                entity.estado,
-                entity.municipio,
-                entity.codigoPostal,
-                entity.pais,
-                entity.domicilioFiscal,
-                entity.ubicacionFiscal,
-                entity.localidadFiscal,
-                entity.estadoFiscal,
-                entity.municipioFiscal,
-                entity.codigoPostalFiscal,
-                entity.numFacturacion,
-                entity.paisFiscal,
-                entity.notas
+            if (logger.isDebugEnabled)
+                logger.info("BT_DETALLE_FACTURA: $entity")
+            if (!facturaRepository.existsByFactura(numFactura, entity.referencia)) {
+                facturaRepository.save(entity)
+            } else {
+                if (logger.isDebugEnabled)
+                    logger.info("Factura duplicada: ${entity.numFactura}")
+            }
+            return true
+        } catch (e: IllegalArgumentException) {
+            logger.error("Error de validación: ${e.message}")
+            false
+        } catch (e: Exception) {
+            logger.error("Error procesando factura: ${e.message}", e)
+            false
+        }
+    }
+
+    fun processCargos(data: List<String>, fileName: String, lineNumber: Int): Boolean {
+        return try {
+            val numFactura = data[0]
+            val operador = data[1]
+            val tipoCargo = data[2]
+            val monto = data[3].toDouble()
+
+            val idUnique = "$fileName:$lineNumber:$numFactura"
+
+            val cargo = BTDetalleCargos(
+                numFactura = numFactura,
+                operador = operador,
+                tipoCargo = tipoCargo,
+                monto = monto,
+                fechaRegistro = Date(),
+                activo = 1,
+                identificadorUnico = idUnique
             )
 
-            return if (isDuplicate) {
-                false
-            } else {
-                facturaRepository.save(entity)
-                true
+            // Guardar en la base de datos
+            if (!cargosRepository.existsByIdentificadorUnico(idUnique)) {
+                cargosRepository.save(cargo)
             }
-        } catch (e: Exception) {
-            // Manejar el error si el formato de la fecha no es válido
-            //handleInvalidDate(fileName, lineNumber, values.getOrNull(5),lastValidDate)
-            return false
-        }
-    }
 
-    private fun processCargos(values: List<String>): Boolean {
-        if (values.size < 4) {
-            logger.warn("Invalid record format for BT_DETALLE_CARGOS: $values")
-            return false
-        }
-
-        val entity = BTDetalleCargos(
-            numFactura = values[0],
-            operador = values.getOrNull(1),
-            tipoCargo = values.getOrNull(2),
-            monto = values.getOrNull(3)?.toDoubleOrNull(),
-            fechaRegistro = Date(),
-            activo = values.getOrNull(5)?.toIntOrNull() ?: 0
-        )
-
-        val isDuplicate = cargosRepository.existsByNumFacturaAndOperadorAndTipoCargoAndMonto(
-            entity.numFactura, entity.operador, entity.tipoCargo, entity.monto
-        )
-
-        return if (isDuplicate) {
-            false
-        } else {
-            cargosRepository.save(entity)
             true
+        } catch (e: Exception) {
+            logger.error("Error procesando cargo en archivo $fileName línea $lineNumber: ${data.joinToString("|")}", e)
+            false
         }
     }
+
 
     private fun <T> obtenerOInsertarEnCache(
         cache: MutableMap<String, T>,
@@ -445,54 +534,51 @@ class DirectoryProcessorService(
                     )
                 }
             )
-            val parsedDate = parseDateWithFallback(values.getOrNull(5)?.trim(), lastValidDate)
-
-            if (parsedDate != null) {
-                val cost = parseDoubleOrDefault(values.getOrNull(8) ?: "0.0", 0.0, "fileName", "lineNumber")
-                val entity = BTDetalleLlamadas(
-                    numFactura = values[0],
-                    operador = values.getOrNull(1),
-                    numOrigen = values.getOrNull(2),
-                    numDestino = values.getOrNull(3),
-                    localidad = poblacion.id.toString(),
-                    fechaLlamada = parsedDate,
-                    horaLlamada = values.getOrNull(6),
-                    duracion = values.getOrNull(7)?.toIntOrNull(),
-                    costo = cost,
-                    cargoAdicional = values.getOrNull(9)?.toDoubleOrNull(),
-                    tipoCargo = values.getOrNull(10),
-                    modalidad = tipoLlamada.id.toString(),
-                    clasificacion = values.getOrNull(12),
-                    fechaCreacion = Date(),
-                    activo = 0,
-                    idCentroCostos = values.getOrNull(15)?.toIntOrNull()
-                )
 
 
-                val existe = llamadasRepository.existsByAllFields(
-                    numFactura = values[0],
-                    operador = values.getOrNull(1),
-                    numOrigen = values.getOrNull(2),
-                    numDestino = values.getOrNull(3),
-                    localidad = poblacion.id.toString(),
-                    horaLlamada = values.getOrNull(6),
-                    duracion = values.getOrNull(7)?.toIntOrNull(),
-                    costo = cost,
-                    cargoAdicional = values.getOrNull(9)?.toDoubleOrNull(),
-                    tipoCargo = values.getOrNull(10),
-                    modalidad = tipoLlamada.id.toString(),
-                    clasificacion = values.getOrNull(12),
-                    )
+            val parsedDate = parseDate(values.getOrNull(5)?.trim())
 
-                if (!existe) {
-                    llamadasRepository.save(entity)
-                    logger.debug("Registro insertado exitosamente: ${entity.numFactura}")
-                }
-                return true
-            } else {
-                logger.warn("Fecha inválida para el registro: $values")
-                return false
+            val cost = parseDoubleOrDefault(values.getOrNull(8) ?: "0.0", 0.0, "fileName", "lineNumber")
+            val entity = BTDetalleLlamadas(
+                numFactura = values[0],
+                operador = values.getOrNull(1),
+                numOrigen = values.getOrNull(2),
+                numDestino = values.getOrNull(3),
+                localidad = poblacion.id.toString(),
+                fechaLlamada = parsedDate,
+                horaLlamada = values.getOrNull(6),
+                duracion = values.getOrNull(7)?.toIntOrNull(),
+                costo = cost,
+                cargoAdicional = values.getOrNull(9)?.toDoubleOrNull(),
+                tipoCargo = values.getOrNull(10),
+                modalidad = tipoLlamada.id.toString(),
+                clasificacion = values.getOrNull(12),
+                fechaCreacion = Date(),
+                activo = 0,
+                idCentroCostos = values.getOrNull(15)?.toIntOrNull()
+            )
+
+
+            val existe = llamadasRepository.existsByAllFields(
+                numFactura = values[0],
+                operador = values.getOrNull(1),
+                numOrigen = values.getOrNull(2),
+                numDestino = values.getOrNull(3),
+                localidad = poblacion.id.toString(),
+                horaLlamada = values.getOrNull(6),
+                duracion = values.getOrNull(7)?.toIntOrNull(),
+                costo = cost,
+                cargoAdicional = values.getOrNull(9)?.toDoubleOrNull(),
+                tipoCargo = values.getOrNull(10),
+                modalidad = tipoLlamada.id.toString(),
+                clasificacion = values.getOrNull(12),
+            )
+
+            if (!existe) {
+                entities.add(entity)
+                logger.debug("Registro insertado exitosamente: ${entity.numFactura}")
             }
+            return true
         } catch (ex: Exception) {
             logger.error("Error processing record: $values", ex)
             return false

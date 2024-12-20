@@ -15,8 +15,8 @@ data class BTDetalleLlamadas(
     @Column(name = "BDL_NUM_ORIGEN") val numOrigen: String?,
     @Column(name = "BDL_NUM_DESTINO") val numDestino: String?,
     @Column(name = "BDL_LOCALIDAD") val localidad: String?,
-    @Column(name = "BDL_FECHA_LLAMDA") val fechaLlamada: Date?,
-    @Column(name = "BDL_HORA_LLAMDA") val horaLlamada: String?,
+    @Column(name = "BDL_FECHA_LLAMADA") val fechaLlamada: Date?,
+    @Column(name = "BDL_HORA_LLAMADA") val horaLlamada: String?,
     @Column(name = "BDL_DURACION") val duracion: Int?,
     @Column(name = "BDL_COSTO") val costo: Double?,
     @Column(name = "BDL_CARGO_ADICIONAL") val cargoAdicional: Double?,
@@ -25,7 +25,11 @@ data class BTDetalleLlamadas(
     @Column(name = "BDL_CLASIFICACION") val clasificacion: String?,
     @Column(name = "BDL_FECHA_CREACION") val fechaCreacion: Date?,
     @Column(name = "BDL_ACTIVO") val activo: Int,
-    @Column(name = "BDL_ID_CENTRO_COSTOS") val idCentroCostos: Int?
+    @Column(name = "BDL_ID_CENTRO_COSTOS") val idCentroCostos: Int?,
+    @Version
+    @Column(name = "VERSION")
+    var version: Long? = null
+
 ) {
     constructor() : this(
         id = 0,

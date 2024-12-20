@@ -9,9 +9,11 @@ import com.bestool.dataproccessor.utils.Utils.Companion.moveToProcessed
 import com.bestool.dataproccessor.utils.Utils.Companion.parseDate
 import com.bestool.dataproccessor.utils.Utils.Companion.parseDateBill
 import com.bestool.dataproccessor.utils.Utils.Companion.parseDoubleOrDefault
+import jakarta.persistence.EntityNotFoundException
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 import java.io.File
@@ -110,6 +112,23 @@ class DirectoryProcessorService(
                 processZipFile(file)
             }
 
+            logger.info("PROCESANDO CATALOGOS: ")
+            val data = directory.walkTopDown()
+                .filter { it.isFile && it.extension.equals("ll", ignoreCase = true) }
+                .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }
+                .toList()
+                .sortedBy { it.length() }
+
+            removeDuplicates(data).forEach { file ->
+                try {
+                    processLLFile(file) // Cambiamos el método para usar batch
+                } catch (e: Exception) {
+                    logger.error("Error al procesar el archivo LL: ${file.name}", e)
+                    moveToProcessed(file, failedDirectory)
+                }
+            }
+
+
             logger.info("PROCESANDO FACTURAS: ")
             val bills = directory.walkTopDown()
                 .filter { it.isFile && it.extension.equals("crt", ignoreCase = true) }
@@ -138,7 +157,12 @@ class DirectoryProcessorService(
                 .sortedBy { it.length() }
 
             removeDuplicates(details).forEach { file ->
-                processLLFile(file)
+                try {
+                    processLLBatchFile(file) // Cambiamos el método para usar batch
+                } catch (e: Exception) {
+                    logger.error("Error al procesar el archivo LL: ${file.name}", e)
+                    moveToProcessed(file, failedDirectory)
+                }
             }
 
 
@@ -266,17 +290,18 @@ class DirectoryProcessorService(
         logger.info("Procesando archivo: ${file.name} (${file.length()} bytes)")
 
         file.bufferedReader().useLines { lines ->
-            if (lines.none()) {
+            val linesList = lines.toList() // Convertimos la secuencia a lista
+            if (linesList.isEmpty()) {
                 logger.error("El archivo ${file.name} está vacío y no se puede procesar.")
                 moveToProcessed(file, failedDirectory)
-                return // Salir del método sin procesar el archivo
+                return
             }
-            val allSuccessful = lines.mapIndexed { index, line ->
+            val allSuccessful = linesList.mapIndexed { index, line ->
                 processCargos(
                     line.split("|"),
                     file.name,
                     index + 1
-                ) // `index + 1` para que el número de línea sea 1-based
+                )
             }.reduce { acc, result -> acc && result }
             // Mover el archivo basado en el estado global
             if (allSuccessful) {
@@ -288,35 +313,22 @@ class DirectoryProcessorService(
             // Marcar el archivo como procesado
             markFileAsProcessed(processedFilesFile, file.name)
         }
+
     }
 
     private fun processLLFile(file: File) {
-        logger.info("Procesando archivo: ${file.name} (${file.length()} bytes)")
+        logger.info("Procesando catalogos de : ${file.name} (${file.length()} bytes)")
         file.bufferedReader().useLines { lines ->
             var allSuccessful = true
 
             lines.forEach { line ->
-                // Si algún procesamiento falla, marcar como no exitoso
-                if (!processLlamadas(line.split("|"))) {
+                if (!processCatalog(line.split("|"))) {
                     allSuccessful = false
                 }
             }
 
-            // Mover el archivo basado en el estado global
-            if (allSuccessful) {
-                moveToProcessed(file, processedDirectory)
-            } else {
-                moveToProcessed(file, failedDirectory)
-            }
-
-            // Marcar el archivo como procesado
-            markFileAsProcessed(processedFilesFile, file.name)
         }
     }
-
-
-
-    val entities = mutableListOf<BTDetalleLlamadas>()
 
 
     // Lee o inicializa el estado del archivo
@@ -411,14 +423,17 @@ class DirectoryProcessorService(
                 activo = 0
             )
 
+
             if (logger.isDebugEnabled)
                 logger.info("BT_DETALLE_FACTURA: $entity")
             if (!facturaRepository.existsByFactura(numFactura, entity.referencia)) {
+
                 facturaRepository.save(entity)
             } else {
                 if (logger.isDebugEnabled)
                     logger.info("Factura duplicada: ${entity.numFactura}")
             }
+
             return true
         } catch (e: IllegalArgumentException) {
             logger.error("Error de validación: ${e.message}")
@@ -491,7 +506,7 @@ class DirectoryProcessorService(
     }
 
 
-    private fun processLlamadas(values: List<String>): Boolean {
+    private fun processCatalog(values: List<String>): Boolean {
         try {
             if (values.size < 13) {
                 logger.warn("Invalid record format for BT_DETALLE_LLAMADAS: $values")
@@ -502,7 +517,7 @@ class DirectoryProcessorService(
             val modalidadDescripcion = values.getOrNull(11)?.uppercase() ?: return false
 
             // Obtener o insertar localidad en caché
-            val poblacion = obtenerOInsertarEnCache(
+            obtenerOInsertarEnCache(
                 cache = localidadesCache,
                 descripcion = localidadDescripcion.ifBlank { "DESCONOCIDA" },
                 buscarEnBD = { catPoblacionRepository.findByDescripcion(it) }, // Buscar en base de datos
@@ -519,7 +534,7 @@ class DirectoryProcessorService(
             )
 
             // Obtener o insertar modalidad en caché
-            val tipoLlamada = obtenerOInsertarEnCache(
+            obtenerOInsertarEnCache(
                 cache = modalidadesCache,
                 descripcion = modalidadDescripcion.ifBlank { "DESCONOCIDA" },
                 buscarEnBD = { catTipoLlamadaRepository.findByDescripcion(it) }, // Buscar en base de datos
@@ -534,12 +549,99 @@ class DirectoryProcessorService(
                     )
                 }
             )
+            return true
+        } catch (ex: Exception) {
+            logger.error("Error processing record: $values", ex)
+            return false
+        }
+    }
 
+    private fun processLLBatchFile(file: File) {
+        logger.info("Procesando archivo LL en batch: ${file.name} (${file.length()} bytes)")
+
+        val batchSize = 50 // Tamaño del lote
+        val batch = mutableListOf<BTDetalleLlamadas>()
+
+        var allSuccess = true
+        file.bufferedReader().useLines { lines ->
+            lines.forEachIndexed { index, line ->
+                try {
+                    val values = line.split("|")
+                    val entity = crearDetalleLlamadasEntity(values) // Método para crear la entidad
+                    if (entity != null) {
+                        batch.add(entity)
+                    }
+
+                    // Procesar el lote cuando alcance el tamaño definido
+                    if (batch.size >= batchSize) {
+                        guardarLoteLlamadas(batch, file.name)
+                        batch.clear() // Limpiar el lote después de guardar
+                    }
+                } catch (e: Exception) {
+                    allSuccess = false
+                    logger.error("Error procesando registro en línea ${index + 1}: $line", e)
+                }
+            }
+
+            // Procesar cualquier registro restante en el último lote
+            if (batch.isNotEmpty()) {
+                guardarLoteLlamadas(batch, file.name)
+            }
+        }
+
+        // Si el procesamiento fue exitoso, mover el archivo a procesados
+        if (allSuccess) {
+            moveToProcessed(file, processedDirectory)
+            markFileAsProcessed(processedFilesFile, file.name)
+            logger.info("Archivo LL procesado exitosamente: ${file.name}")
+        } else {
+            moveToProcessed(file, failedDirectory)
+            markFileAsProcessed(processedFilesFile, file.name)
+            logger.info("Archivo fallido: ${file.name}")
+        }
+
+    }
+
+    private fun guardarLoteLlamadas(batch: List<BTDetalleLlamadas>, fileName: String) {
+        try {
+            llamadasRepository.saveAll(batch) // Guardar todas las entidades en un solo batch
+            logger.info("Lote de ${batch.size} registros guardado exitosamente.")
+        } catch (e: Exception) {
+            logger.error("Error guardando lote del archivo $fileName: ${e.message}", e)
+            // Procesar cada registro individualmente si ocurre un error en el lote
+            batch.forEach { record ->
+                try {
+                    val existe = llamadasRepository.existsById(record.id)
+                    if (!existe) {
+                        logger.error("La entidad no existe en la base de datos")
+                        return
+                    }
+                    llamadasRepository.save(record)
+                } catch (ex: ObjectOptimisticLockingFailureException) {
+                    logger.warn("Conflicto detectado. Reintentando...")
+                    val entidadActualizada =
+                        llamadasRepository.findById(record.id).orElseThrow { EntityNotFoundException() }
+                    llamadasRepository.save(entidadActualizada)
+                } catch (ex: Exception) {
+                    logger.error("Error guardando registro individual: ${record.numFactura}", ex)
+                }
+            }
+        }
+    }
+
+
+    private fun crearDetalleLlamadasEntity(values: List<String>): BTDetalleLlamadas? {
+        return try {
+            val localidadDescripcion = values.getOrNull(4)?.uppercase() ?: "DESCONOCIDA"
+            val modalidadDescripcion = values.getOrNull(11)?.uppercase() ?: "DESCONOCIDA"
+
+            val poblacion = localidadesCache[localidadDescripcion] ?: return null
+            val tipoLlamada = modalidadesCache[modalidadDescripcion] ?: return null
 
             val parsedDate = parseDate(values.getOrNull(5)?.trim())
-
             val cost = parseDoubleOrDefault(values.getOrNull(8) ?: "0.0", 0.0, "fileName", "lineNumber")
-            val entity = BTDetalleLlamadas(
+
+            BTDetalleLlamadas(
                 numFactura = values[0],
                 operador = values.getOrNull(1),
                 numOrigen = values.getOrNull(2),
@@ -557,32 +659,11 @@ class DirectoryProcessorService(
                 activo = 0,
                 idCentroCostos = values.getOrNull(15)?.toIntOrNull()
             )
-
-
-            val existe = llamadasRepository.existsByAllFields(
-                numFactura = values[0],
-                operador = values.getOrNull(1),
-                numOrigen = values.getOrNull(2),
-                numDestino = values.getOrNull(3),
-                localidad = poblacion.id.toString(),
-                horaLlamada = values.getOrNull(6),
-                duracion = values.getOrNull(7)?.toIntOrNull(),
-                costo = cost,
-                cargoAdicional = values.getOrNull(9)?.toDoubleOrNull(),
-                tipoCargo = values.getOrNull(10),
-                modalidad = tipoLlamada.id.toString(),
-                clasificacion = values.getOrNull(12),
-            )
-
-            if (!existe) {
-                entities.add(entity)
-                logger.debug("Registro insertado exitosamente: ${entity.numFactura}")
-            }
-            return true
-        } catch (ex: Exception) {
-            logger.error("Error processing record: $values", ex)
-            return false
+        } catch (e: Exception) {
+            logger.error("Error creando entidad para los valores: $values", e)
+            null
         }
     }
+
 
 }

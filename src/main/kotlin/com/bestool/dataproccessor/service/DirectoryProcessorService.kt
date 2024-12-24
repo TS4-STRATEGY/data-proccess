@@ -559,7 +559,7 @@ class DirectoryProcessorService(
     private fun processLLBatchFile(file: File) {
         logger.info("Procesando archivo LL en batch: ${file.name} (${file.length()} bytes)")
 
-        val batchSize = 50 // Tamaño del lote
+        val batchSize = 1000 // Tamaño del lote
         val batch = mutableListOf<BTDetalleLlamadas>()
 
         var allSuccess = true

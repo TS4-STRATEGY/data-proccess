@@ -3,14 +3,14 @@ package com.bestool.dataproccessor.utils
 
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.io.PrintWriter
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.text.ParseException
-import java.util.*
 import java.text.SimpleDateFormat
+import java.util.*
 
 open class Utils {
-
 
     companion object {
 
@@ -40,12 +40,12 @@ open class Utils {
 
         fun parseDateBill(dateString: String?): Date? {
             if (!dateString.isNullOrEmpty()) {
-                    try {
-                        val parsedDate = SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH).parse(dateString)
-                        return parsedDate
-                    } catch (e: ParseException) {
-                        logger.warn("Failed to parse date with format: ${dateString.toPattern()}")
-                    }
+                try {
+                    val parsedDate = SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH).parse(dateString)
+                    return parsedDate
+                } catch (e: ParseException) {
+                    logger.warn("Failed to parse date with format: ${dateString.toPattern()}")
+                }
             }
             return null
         }
@@ -133,7 +133,8 @@ open class Utils {
                 value.toDouble()
             } catch (e: NumberFormatException) {
                 logger.error(
-                    "Invalid number format in file: $fileName, line: $lineNumber, value: $value. Using default value: $defaultValue")
+                    "Invalid number format in file: $fileName, line: $lineNumber, value: $value. Using default value: $defaultValue"
+                )
                 defaultValue
             }
         }
@@ -154,6 +155,55 @@ open class Utils {
             return posiblesDelimitadores.firstOrNull { line.contains(it) }
         }
 
+        fun splitFileBySizeAndLines(file: File, maxSizeInMB: Int): List<File> {
+            val maxSizeInBytes = maxSizeInMB * 1024 * 1024 // Convertir MB a bytes
+            val parts = mutableListOf<File>()
+
+            try {
+                var partNumber = 1
+                var currentSize = 0L
+                var currentPart: File? = null
+                var writer: PrintWriter? = null
+
+                file.useLines { lines ->
+                    lines.forEach { line ->
+                        val lineSize = line.toByteArray().size
+
+                        // Crear un nuevo archivo si el tamaño acumulado supera el límite
+                        if (currentSize + lineSize > maxSizeInBytes) {
+                            writer?.close() // Cerrar el archivo anterior
+                            currentPart =
+                                File("${file.parent}/${file.nameWithoutExtension}_part$partNumber.${file.extension}")
+                            writer = PrintWriter(currentPart)
+                            parts.add(currentPart!!)
+                            partNumber++
+                            currentSize = 0L // Reiniciar el tamaño acumulado
+                        }
+
+                        // Escribir la línea en la parte actual
+                        writer?.println(line)
+                        currentSize += lineSize
+                    }
+                }
+                writer?.close() // Asegúrate de cerrar el último archivo
+
+                // Eliminar el archivo original si todas las partes se generaron correctamente
+                if (parts.isNotEmpty()) {
+                    if (file.delete()) {
+                        logger.info("Archivo original eliminado con éxito: ${file.name}")
+                    } else {
+                        logger.error("No se pudo eliminar el archivo original: ${file.name}")
+                    }
+                }
+            } catch (e: Exception) {
+                logger.error("Error durante la partición del archivo: ${e.message}")
+            }
+
+            return parts
+        }
+
+
 
     }
+
 }

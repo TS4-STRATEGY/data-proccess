@@ -2,13 +2,13 @@ package com.bestool.dataproccessor.service
 
 import com.bestool.dataproccessor.entity.*
 import com.bestool.dataproccessor.repository.*
-import com.bestool.dataproccessor.utils.Utils.Companion.detectarDelimitador
 import com.bestool.dataproccessor.utils.Utils.Companion.getProcessedFiles
 import com.bestool.dataproccessor.utils.Utils.Companion.markFileAsProcessed
 import com.bestool.dataproccessor.utils.Utils.Companion.moveToProcessed
 import com.bestool.dataproccessor.utils.Utils.Companion.parseDate
 import com.bestool.dataproccessor.utils.Utils.Companion.parseDateBill
 import com.bestool.dataproccessor.utils.Utils.Companion.parseDoubleOrDefault
+import com.bestool.dataproccessor.utils.Utils.Companion.splitFileBySizeAndLines
 import jakarta.persistence.EntityNotFoundException
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -23,6 +23,8 @@ import java.io.IOException
 import java.sql.SQLIntegrityConstraintViolationException
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
@@ -31,6 +33,7 @@ class DirectoryProcessorService(
     @Value("\${directory.input.path}") private val directoryPath: String,
     @Value("\${directory.processed.path}") private val processedPath: String,
     @Value("\${directory.failed.path}") private val failedPath: String,
+    @Value("\${directory.part.size}") private val size: Int,
     private val catPoblacionRepository: CatPoblacionRepository,
     private val catTipoLlamadaRepository: CatTipoLlamadaRepository,
     private val facturaRepository: BTDetalleFacturaRepository,
@@ -111,6 +114,25 @@ class DirectoryProcessorService(
             zips.forEach { file ->
                 processZipFile(file)
             }
+
+            logger.info("FRACCIONANDO DETALLE DE LLAMADAS: ")
+            val parts = directory.walkTopDown()
+                .filter { it.isFile && it.extension.equals("ll", ignoreCase = true) }
+                .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }
+                .toList()
+                .sortedBy { it.length() }
+
+            removeDuplicates(parts).forEach { file ->
+                try {
+                    val partes = splitFileBySizeAndLines(file, size)
+                    if (partes.isNotEmpty() && partes.size >= 2)
+                        logger.info("Se generaron ${partes.size} partes:")
+                } catch (e: Exception) {
+                    logger.error("Error al procesar el archivo LL: ${file.name}", e)
+                    moveToProcessed(file, failedDirectory)
+                }
+            }
+
 
             logger.info("PROCESANDO CATALOGOS: ")
             val data = directory.walkTopDown()
@@ -420,7 +442,7 @@ class DirectoryProcessorService(
                 paisFiscal = values.getOrNull(35),
                 notas = "",
                 fechaCreacion = Date(),
-                activo = 0
+                activo = 1
             )
 
 
@@ -560,46 +582,46 @@ class DirectoryProcessorService(
         logger.info("Procesando archivo LL en batch: ${file.name} (${file.length()} bytes)")
 
         val batchSize = 1000 // Tamaño del lote
-        val batch = mutableListOf<BTDetalleLlamadas>()
+        val parallelism = Runtime.getRuntime().availableProcessors() // Paralelismo
+        val executor = Executors.newFixedThreadPool(parallelism) // Executor para procesar en paralelo
+        val batchQueue = Collections.synchronizedList(mutableListOf<BTDetalleLlamadas>()) // Lotes sincronizados
+        val allSuccess = AtomicBoolean(true)
 
-        var allSuccess = true
-        file.bufferedReader().useLines { lines ->
-            lines.forEachIndexed { index, line ->
-                try {
-                    val values = line.split("|")
-                    val entity = crearDetalleLlamadasEntity(values) // Método para crear la entidad
-                    if (entity != null) {
-                        batch.add(entity)
+        try {
+            file.bufferedReader().useLines { lines ->
+                val tasks = lines.chunked(batchSize).map { chunk ->
+                    executor.submit {
+                        val batch = mutableListOf<BTDetalleLlamadas>()
+                        chunk.forEach { line ->
+                            try {
+                                val values = line.split("|")
+                                val entity = crearDetalleLlamadasEntity(values)
+                                if (entity != null) batch.add(entity)
+                            } catch (e: Exception) {
+                                allSuccess.set(false)
+                                logger.error("Error procesando línea: $line", e)
+                            }
+                        }
+                        guardarLoteLlamadas(batch, file.name) // Guardar lote procesado
                     }
-
-                    // Procesar el lote cuando alcance el tamaño definido
-                    if (batch.size >= batchSize) {
-                        guardarLoteLlamadas(batch, file.name)
-                        batch.clear() // Limpiar el lote después de guardar
-                    }
-                } catch (e: Exception) {
-                    allSuccess = false
-                    logger.error("Error procesando registro en línea ${index + 1}: $line", e)
                 }
+                tasks.forEach { it.get() } // Espera a que todos los lotes terminen
             }
 
-            // Procesar cualquier registro restante en el último lote
-            if (batch.isNotEmpty()) {
-                guardarLoteLlamadas(batch, file.name)
+            if (allSuccess.get()) {
+                moveToProcessed(file, processedDirectory)
+                markFileAsProcessed(processedFilesFile, file.name)
+                logger.info("Archivo LL procesado exitosamente: ${file.name}")
+            } else {
+                moveToProcessed(file, failedDirectory)
+                logger.warn("Archivo procesado con errores: ${file.name}")
             }
-        }
-
-        // Si el procesamiento fue exitoso, mover el archivo a procesados
-        if (allSuccess) {
-            moveToProcessed(file, processedDirectory)
-            markFileAsProcessed(processedFilesFile, file.name)
-            logger.info("Archivo LL procesado exitosamente: ${file.name}")
-        } else {
+        } catch (e: Exception) {
+            logger.error("Error procesando archivo LL: ${e.message}", e)
             moveToProcessed(file, failedDirectory)
-            markFileAsProcessed(processedFilesFile, file.name)
-            logger.info("Archivo fallido: ${file.name}")
+        } finally {
+            executor.shutdown()
         }
-
     }
 
     private fun guardarLoteLlamadas(batch: List<BTDetalleLlamadas>, fileName: String) {
@@ -656,7 +678,7 @@ class DirectoryProcessorService(
                 modalidad = tipoLlamada.id.toString(),
                 clasificacion = values.getOrNull(12),
                 fechaCreacion = Date(),
-                activo = 0,
+                activo = 1,
                 idCentroCostos = values.getOrNull(15)?.toIntOrNull()
             )
         } catch (e: Exception) {

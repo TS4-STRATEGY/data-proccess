@@ -1,4 +1,4 @@
-package com.bestool.dataproccessor.utils
+package com.bestool.dataprocessor.utils
 
 
 import org.slf4j.LoggerFactory
@@ -148,11 +148,6 @@ open class Utils {
 
         fun markFileAsProcessed(processedFilesFile: File, fileName: String) {
             processedFilesFile.appendText("$fileName\n")
-        }
-
-        fun detectarDelimitador(line: String): String? {
-            val posiblesDelimitadores = listOf("|", ",", ";")
-            return posiblesDelimitadores.firstOrNull { line.contains(it) }
         }
 
         fun splitFileBySizeAndLines(file: File, maxSizeInMB: Int): List<File> {

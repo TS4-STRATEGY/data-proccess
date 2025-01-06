@@ -1,10 +1,9 @@
-package com.bestool.dataproccessor.repository
+package com.bestool.dataprocessor.repository
 
-import com.bestool.dataproccessor.entity.BTDetalleLlamadas
-import jakarta.persistence.EntityManager
-import jakarta.persistence.PersistenceContext
-import jakarta.transaction.Transactional
+import com.bestool.dataprocessor.entity.BTDetalleLlamadas
+import javax.persistence.*
 import org.springframework.stereotype.Repository
+import javax.transaction.Transactional
 
 @Repository
 class BatchRepository(

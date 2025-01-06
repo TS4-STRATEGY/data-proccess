@@ -1,7 +1,7 @@
-package com.bestool.dataproccessor.entity
+package com.bestool.dataprocessor.entity
 
-import jakarta.persistence.*
 import java.util.*
+import javax.persistence.*
 
 @Entity
 @Table(name = "BT_DETALLE_CARGOS")

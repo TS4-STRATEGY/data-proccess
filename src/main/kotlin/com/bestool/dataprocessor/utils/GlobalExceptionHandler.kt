@@ -1,4 +1,4 @@
-package com.bestool.dataproccessor.utils
+package com.bestool.dataprocessor.utils
 
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus

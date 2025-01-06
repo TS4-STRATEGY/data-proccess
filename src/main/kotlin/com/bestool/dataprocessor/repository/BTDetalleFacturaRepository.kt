@@ -1,9 +1,8 @@
-package com.bestool.dataproccessor.repository
+package com.bestool.dataprocessor.repository
 
-import com.bestool.dataproccessor.entity.BTDetalleFactura
+import com.bestool.dataprocessor.entity.BTDetalleFactura
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
-import java.util.*
 
 interface BTDetalleFacturaRepository : JpaRepository<BTDetalleFactura, Long> {
     @Query(

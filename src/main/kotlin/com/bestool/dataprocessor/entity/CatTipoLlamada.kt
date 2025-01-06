@@ -1,6 +1,6 @@
-package com.bestool.dataproccessor.entity
+package com.bestool.dataprocessor.entity
 
-import jakarta.persistence.*
+import javax.persistence.*
 import java.util.*
 
 @Entity

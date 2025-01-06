@@ -1,18 +1,22 @@
-package com.bestool.dataproccessor.controller
+package com.bestool.dataprocessor.controller
 
-import com.bestool.dataproccessor.service.DirectoryProcessorService
+import com.bestool.dataprocessor.service.DirectoryProcessorService
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RestController
+import java.io.File
 
 @RestController
 class DirectoryProcessorController(private val directoryProcessorService: DirectoryProcessorService) {
 
-    @GetMapping("/process-directory")
-    fun processDirectory(): String {
+    @GetMapping("/process-directory/{directoryId}")
+    fun processDirectory(@PathVariable directoryId: String): String {
         // Inicia el proceso en segundo plano
-        directoryProcessorService.processDirectoryAsync()
 
-        // Devuelve el estado actual
+
+
+        // Inicia el proceso en segundo plano
+        directoryProcessorService.processDirectoryAsync(directoryId)
         val status = directoryProcessorService.readOrInitializeStatus()
 
         return """{"status": "success", "currentStatus": "$status"}"""

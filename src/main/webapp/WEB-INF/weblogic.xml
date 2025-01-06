@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<weblogic-web-app xmlns="http://xmlns.oracle.com/weblogic/weblogic-web-app"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://xmlns.oracle.com/weblogic/weblogic-web-app https://xmlns.oracle.com/weblogic/weblogic-web-app/1.0/weblogic-web-app.xsd">
+
+    <context-root>/btpas-dataprocessor</context-root>
+
+    <resource-description>
+        <res-ref-name>jdbc/ASP</res-ref-name>
+        <jndi-name>jdbc/ASP</jndi-name>
+    </resource-description>
+
+    <!-- Configuración de roles (opcional) -->
+    <security-role-assignment>
+        <role-name>admin</role-name>
+        <principal-name>weblogic</principal-name>
+    </security-role-assignment>
+
+</weblogic-web-app>

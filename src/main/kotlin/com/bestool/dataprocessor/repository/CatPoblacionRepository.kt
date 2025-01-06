@@ -1,7 +1,7 @@
-package com.bestool.dataproccessor.repository
+package com.bestool.dataprocessor.repository
 
-import com.bestool.dataproccessor.entity.CatPoblacion
-import com.bestool.dataproccessor.entity.CatTipoLlamada
+import com.bestool.dataprocessor.entity.CatPoblacion
+import com.bestool.dataprocessor.entity.CatTipoLlamada
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.stereotype.Repository
 

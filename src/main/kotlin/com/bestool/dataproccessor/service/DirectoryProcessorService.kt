@@ -50,6 +50,8 @@ class DirectoryProcessorService(
 
     private var localidadesCache = ConcurrentHashMap<String, CatPoblacion>()
     private var modalidadesCache = ConcurrentHashMap<String, CatTipoLlamada>()
+    private var facturasCache = ConcurrentHashMap<String, String>()
+
 
 
     init {
@@ -396,66 +398,69 @@ class DirectoryProcessorService(
         return try {
             val numFactura = values[0].takeIf { it.isNotBlank() }
                 ?: throw IllegalArgumentException("El campo numFactura es obligatorio y está vacío")
+            val referencia = values.getOrNull(24)
+            if (referencia.equals("8110457")) {
+                facturasCache.computeIfAbsent(numFactura) { numFactura }
 
-            val entity = BTDetalleFactura(
-                numFactura = numFactura,
-                referencia = values.getOrNull(24),
-                operador = values.getOrNull(2),
-                fechaEmision = values.getOrNull(3)?.let { parseDateBill(it) },
-                fechaVencimiento = values.getOrNull(4)?.let { parseDateBill(it) },
-                fechaCorte = values.getOrNull(5)?.let { parseDateBill(it) },
-                moneda = values.getOrNull(6),
-                tipoMoneda = values.getOrNull(7),
-                iva = values.getOrNull(8)?.toDoubleOrNull() ?: 0.0,
-                subtotal = values.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
-                impuestos = values.getOrNull(10)?.toDoubleOrNull() ?: 0.0,
-                total = values.getOrNull(11)?.toDoubleOrNull() ?: 0.0,
-                totalLetra = values.getOrNull(12),
-                saldoAnterior = values.getOrNull(13)?.toDoubleOrNull(),
-                descuento = values.getOrNull(14)?.toDoubleOrNull() ?: 0.0,
-                otrosCargos = values.getOrNull(15)?.toDoubleOrNull() ?: 0.0,
-                subtotal2 = values.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
-                impuestos2 = values.getOrNull(10)?.toDoubleOrNull(),
-                total2 = values.getOrNull(11)?.toDoubleOrNull(),
-                totalFinal = values.getOrNull(20)?.toDoubleOrNull(),
-                nombreCliente = values.getOrNull(21),
-                descripcionCliente = values.getOrNull(22),
-                sucursal = values.getOrNull(23),
-                numeroCuenta = values.getOrNull(24),
-                rfc = values.getOrNull(25),
-                referenciaAdicional = "",
-                nombreClienteAdicional = values.getOrNull(26),
-                domicilio = values.getOrNull(27),
-                ubicacion = values.getOrNull(30),
-                localidad = values.getOrNull(31),
-                estado = values.getOrNull(32),
-                municipio = values.getOrNull(33),
-                codigoPostal = values.getOrNull(34),
-                pais = values.getOrNull(35),
-                domicilioFiscal = values.getOrNull(36),
-                ubicacionFiscal = values.getOrNull(37),
-                localidadFiscal = values.getOrNull(38),
-                estadoFiscal = values.getOrNull(39),
-                municipioFiscal = values.getOrNull(40),
-                codigoPostalFiscal = values.getOrNull(41),
-                numFacturacion = values.getOrNull(41) ?: "N/A",
-                paisFiscal = values.getOrNull(35),
-                notas = "",
-                fechaCreacion = Date(),
-                activo = 1
-            )
+                val entity = BTDetalleFactura(
+                    numFactura = numFactura,
+                    referencia = values.getOrNull(24),
+                    operador = values.getOrNull(2),
+                    fechaEmision = values.getOrNull(3)?.let { parseDateBill(it) },
+                    fechaVencimiento = values.getOrNull(4)?.let { parseDateBill(it) },
+                    fechaCorte = values.getOrNull(5)?.let { parseDateBill(it) },
+                    moneda = values.getOrNull(6),
+                    tipoMoneda = values.getOrNull(7),
+                    iva = values.getOrNull(8)?.toDoubleOrNull() ?: 0.0,
+                    subtotal = values.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
+                    impuestos = values.getOrNull(10)?.toDoubleOrNull() ?: 0.0,
+                    total = values.getOrNull(11)?.toDoubleOrNull() ?: 0.0,
+                    totalLetra = values.getOrNull(12),
+                    saldoAnterior = values.getOrNull(13)?.toDoubleOrNull(),
+                    descuento = values.getOrNull(14)?.toDoubleOrNull() ?: 0.0,
+                    otrosCargos = values.getOrNull(15)?.toDoubleOrNull() ?: 0.0,
+                    subtotal2 = values.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
+                    impuestos2 = values.getOrNull(10)?.toDoubleOrNull(),
+                    total2 = values.getOrNull(11)?.toDoubleOrNull(),
+                    totalFinal = values.getOrNull(20)?.toDoubleOrNull(),
+                    nombreCliente = values.getOrNull(21),
+                    descripcionCliente = values.getOrNull(22),
+                    sucursal = values.getOrNull(23),
+                    numeroCuenta = values.getOrNull(24),
+                    rfc = values.getOrNull(25),
+                    referenciaAdicional = "",
+                    nombreClienteAdicional = values.getOrNull(26),
+                    domicilio = values.getOrNull(27),
+                    ubicacion = values.getOrNull(30),
+                    localidad = values.getOrNull(31),
+                    estado = values.getOrNull(32),
+                    municipio = values.getOrNull(33),
+                    codigoPostal = values.getOrNull(34),
+                    pais = values.getOrNull(35),
+                    domicilioFiscal = values.getOrNull(36),
+                    ubicacionFiscal = values.getOrNull(37),
+                    localidadFiscal = values.getOrNull(38),
+                    estadoFiscal = values.getOrNull(39),
+                    municipioFiscal = values.getOrNull(40),
+                    codigoPostalFiscal = values.getOrNull(41),
+                    numFacturacion = values.getOrNull(41) ?: "N/A",
+                    paisFiscal = values.getOrNull(35),
+                    notas = "",
+                    fechaCreacion = Date(),
+                    activo = 1
+                )
 
 
-            if (logger.isDebugEnabled)
-                logger.info("BT_DETALLE_FACTURA: $entity")
-            if (!facturaRepository.existsByFactura(numFactura, entity.referencia)) {
-
-                facturaRepository.save(entity)
-            } else {
                 if (logger.isDebugEnabled)
-                    logger.info("Factura duplicada: ${entity.numFactura}")
-            }
+                    logger.info("BT_DETALLE_FACTURA: $entity")
+                if (!facturaRepository.existsByFactura(numFactura, entity.referencia)) {
 
+                    facturaRepository.save(entity)
+                } else {
+                    if (logger.isDebugEnabled)
+                        logger.info("Factura duplicada: ${entity.numFactura}")
+                }
+            }
             return true
         } catch (e: IllegalArgumentException) {
             logger.error("Error de validación: ${e.message}")
@@ -469,6 +474,7 @@ class DirectoryProcessorService(
     fun processCargos(data: List<String>, fileName: String, lineNumber: Int): Boolean {
         return try {
             val numFactura = data[0]
+            if (facturasCache.containsKey(numFactura)) {
             val operador = data[1]
             val tipoCargo = data[2]
             val monto = data[3].toDouble()
@@ -488,6 +494,7 @@ class DirectoryProcessorService(
             // Guardar en la base de datos
             if (!cargosRepository.existsByIdentificadorUnico(idUnique)) {
                 cargosRepository.save(cargo)
+            }
             }
 
             true
@@ -581,7 +588,7 @@ class DirectoryProcessorService(
     private fun processLLBatchFile(file: File) {
         logger.info("Procesando archivo LL en batch: ${file.name} (${file.length()} bytes)")
 
-        val batchSize = 1000 // Tamaño del lote
+        val batchSize = 500 // Tamaño del lote
         val parallelism = Runtime.getRuntime().availableProcessors() // Paralelismo
         val executor = Executors.newFixedThreadPool(parallelism) // Executor para procesar en paralelo
         val batchQueue = Collections.synchronizedList(mutableListOf<BTDetalleLlamadas>()) // Lotes sincronizados
@@ -595,8 +602,10 @@ class DirectoryProcessorService(
                         chunk.forEach { line ->
                             try {
                                 val values = line.split("|")
-                                val entity = crearDetalleLlamadasEntity(values)
-                                if (entity != null) batch.add(entity)
+                                if (facturasCache.containsKey(values[0])){
+                                    val entity = crearDetalleLlamadasEntity(values)
+                                    if (entity != null) batch.add(entity)
+                                }
                             } catch (e: Exception) {
                                 allSuccess.set(false)
                                 logger.error("Error procesando línea: $line", e)

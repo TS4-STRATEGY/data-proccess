@@ -8,7 +8,7 @@ import java.util.*
 data class BTDetalleLlamadas(
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "seq_detalle")
-    @SequenceGenerator(name = "seq_detalle", sequenceName = "SEQ_BT_DETALLE_LLAMADAS", allocationSize = 1)
+    @SequenceGenerator(name = "seq_detalle", sequenceName = "SEQ_BT_DETALLE_LLAMADAS", allocationSize = 500)
     @Column(name = "BDL_ID") val id: Long = 0,
     @Column(name = "BDL_NUM_FACTURA") val numFactura: String,
     @Column(name = "BDL_OPERADOR") val operador: String?,

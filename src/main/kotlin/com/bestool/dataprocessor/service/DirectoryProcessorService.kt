@@ -645,7 +645,7 @@ class DirectoryProcessorService(
                         record.cargoAdicional, record.tipoCargo, record.modalidad, record.clasificacion
                     )
                     if (existente == null) {
-                        logger.info("Guardando nuevo registro con numFactura: ${record.numFactura}")
+                        logger.info("Guardando nuevo registro con numFactura: $record")
                         llamadasRepository.save(record)
                     } else {
                         logger.warn("El registro ya existe. Actualizando si es necesario.")
@@ -656,15 +656,15 @@ class DirectoryProcessorService(
                     try {
                         val entidadActualizada = llamadasRepository.findById(record.id).orElse(null)
                         if (entidadActualizada == null) {
-                            logger.error("Entidad no encontrada para ID ${record.id}")
+                            logger.error("Entidad no encontrada para ID $record")
                             return@forEach
                         }
                         llamadasRepository.save(entidadActualizada)
                     } catch (innerEx: Exception) {
-                        logger.error("Error procesando la entidad con ID ${record.id}", innerEx)
+                        logger.error("Error procesando la entidad con ID $record", innerEx)
                     }
                 } catch (ex: Exception) {
-                    logger.error("Error guardando registro individual: ${record.numFactura}", ex)
+                    logger.error("Error guardando registro individual: $record", ex)
                 }
             }
         }
@@ -737,23 +737,5 @@ class DirectoryProcessorService(
         }
     }
 
-
-    fun registroExiste(detalle: BTDetalleLlamadas): Boolean {
-        return llamadasRepository.existsByUniqueConstraint(
-            numFactura = detalle.numFactura,
-            operador = detalle.operador,
-            numOrigen = detalle.numOrigen,
-            numDestino = detalle.numDestino,
-            localidad = detalle.localidad,
-            fechaLlamada = detalle.fechaLlamada,
-            horaLlamada = detalle.horaLlamada,
-            duracion = detalle.duracion,
-            costo = detalle.costo,
-            cargoAdicional = detalle.cargoAdicional,
-            tipoCargo = detalle.tipoCargo,
-            modalidad = detalle.modalidad,
-            clasificacion = detalle.clasificacion
-        )
-    }
 
 }

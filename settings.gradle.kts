@@ -1,1 +1,1 @@
-rootProject.name = "DataProccessor"
+rootProject.name = "btpas-data-collector"

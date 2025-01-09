@@ -1,4 +1,4 @@
-package com.bestool.dataprocessor.service
+package com.bestool.dataproccessor.service
 
 import com.bestool.dataprocessor.entity.*
 import com.bestool.dataprocessor.repository.*
@@ -43,6 +43,7 @@ class DirectoryProcessorService(
 
     private var localidadesCache = ConcurrentHashMap<String, CatPoblacion>()
     private var modalidadesCache = ConcurrentHashMap<String, CatTipoLlamada>()
+    private var facturasCache = ConcurrentHashMap<String, String>()
 
 
 
@@ -386,63 +387,64 @@ class DirectoryProcessorService(
             val numFactura = values[0].takeIf { it.isNotBlank() }
                 ?: throw IllegalArgumentException("El campo numFactura es obligatorio y está vacío")
 
-            val entity = BTDetalleFactura(
-                numFactura = numFactura,
-                referencia = values.getOrNull(24),
-                operador = values.getOrNull(2),
-                fechaEmision = values.getOrNull(3)?.let { parseDateBill(it) },
-                fechaVencimiento = values.getOrNull(4)?.let { parseDateBill(it) },
-                fechaCorte = values.getOrNull(5)?.let { parseDateBill(it) },
-                moneda = values.getOrNull(6),
-                tipoMoneda = values.getOrNull(7),
-                iva = values.getOrNull(8)?.toDoubleOrNull() ?: 0.0,
-                subtotal = values.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
-                impuestos = values.getOrNull(10)?.toDoubleOrNull() ?: 0.0,
-                total = values.getOrNull(11)?.toDoubleOrNull() ?: 0.0,
-                totalLetra = values.getOrNull(12),
-                saldoAnterior = values.getOrNull(13)?.toDoubleOrNull(),
-                descuento = values.getOrNull(14)?.toDoubleOrNull() ?: 0.0,
-                otrosCargos = values.getOrNull(15)?.toDoubleOrNull() ?: 0.0,
-                subtotal2 = values.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
-                impuestos2 = values.getOrNull(10)?.toDoubleOrNull(),
-                total2 = values.getOrNull(11)?.toDoubleOrNull(),
-                totalFinal = values.getOrNull(20)?.toDoubleOrNull(),
-                nombreCliente = values.getOrNull(21),
-                descripcionCliente = values.getOrNull(22),
-                sucursal = values.getOrNull(23),
-                numeroCuenta = values.getOrNull(24),
-                rfc = values.getOrNull(25),
-                referenciaAdicional = "",
-                nombreClienteAdicional = values.getOrNull(26),
-                domicilio = values.getOrNull(27),
-                ubicacion = values.getOrNull(30),
-                localidad = values.getOrNull(31),
-                estado = values.getOrNull(32),
-                municipio = values.getOrNull(33),
-                codigoPostal = values.getOrNull(34),
-                pais = values.getOrNull(35),
-                domicilioFiscal = values.getOrNull(36),
-                ubicacionFiscal = values.getOrNull(37),
-                localidadFiscal = values.getOrNull(38),
-                estadoFiscal = values.getOrNull(39),
-                municipioFiscal = values.getOrNull(40),
-                codigoPostalFiscal = values.getOrNull(41),
-                numFacturacion = values.getOrNull(41) ?: "N/A",
-                paisFiscal = values.getOrNull(35),
-                notas = "",
-                fechaCreacion = Date(),
-                activo = 1
-            )
+                val entity = BTDetalleFactura(
+                    numFactura = numFactura,
+                    referencia = values.getOrNull(24),
+                    operador = values.getOrNull(2),
+                    fechaEmision = values.getOrNull(3)?.let { parseDateBill(it) },
+                    fechaVencimiento = values.getOrNull(4)?.let { parseDateBill(it) },
+                    fechaCorte = values.getOrNull(5)?.let { parseDateBill(it) },
+                    moneda = values.getOrNull(6),
+                    tipoMoneda = values.getOrNull(7),
+                    iva = values.getOrNull(8)?.toDoubleOrNull() ?: 0.0,
+                    subtotal = values.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
+                    impuestos = values.getOrNull(10)?.toDoubleOrNull() ?: 0.0,
+                    total = values.getOrNull(11)?.toDoubleOrNull() ?: 0.0,
+                    totalLetra = values.getOrNull(12),
+                    saldoAnterior = values.getOrNull(13)?.toDoubleOrNull(),
+                    descuento = values.getOrNull(14)?.toDoubleOrNull() ?: 0.0,
+                    otrosCargos = values.getOrNull(15)?.toDoubleOrNull() ?: 0.0,
+                    subtotal2 = values.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
+                    impuestos2 = values.getOrNull(10)?.toDoubleOrNull(),
+                    total2 = values.getOrNull(11)?.toDoubleOrNull(),
+                    totalFinal = values.getOrNull(20)?.toDoubleOrNull(),
+                    nombreCliente = values.getOrNull(21),
+                    descripcionCliente = values.getOrNull(22),
+                    sucursal = values.getOrNull(23),
+                    numeroCuenta = values.getOrNull(24),
+                    rfc = values.getOrNull(25),
+                    referenciaAdicional = "",
+                    nombreClienteAdicional = values.getOrNull(26),
+                    domicilio = values.getOrNull(27),
+                    ubicacion = values.getOrNull(30),
+                    localidad = values.getOrNull(31),
+                    estado = values.getOrNull(32),
+                    municipio = values.getOrNull(33),
+                    codigoPostal = values.getOrNull(34),
+                    pais = values.getOrNull(35),
+                    domicilioFiscal = values.getOrNull(36),
+                    ubicacionFiscal = values.getOrNull(37),
+                    localidadFiscal = values.getOrNull(38),
+                    estadoFiscal = values.getOrNull(39),
+                    municipioFiscal = values.getOrNull(40),
+                    codigoPostalFiscal = values.getOrNull(41),
+                    numFacturacion = values.getOrNull(41) ?: "N/A",
+                    paisFiscal = values.getOrNull(35),
+                    notas = "",
+                    fechaCreacion = Date(),
+                    activo = 1
+                )
 
 
-            if (logger.isDebugEnabled) logger.info("BT_DETALLE_FACTURA: $entity")
-            if (!facturaRepository.existsByFactura(numFactura, entity.referencia)) {
+                if (logger.isDebugEnabled)
+                    logger.info("BT_DETALLE_FACTURA: $entity")
+                if (!facturaRepository.existsByFactura(numFactura, entity.referencia)) {
 
-                facturaRepository.save(entity)
-            } else {
-                if (logger.isDebugEnabled) logger.info("Factura duplicada: ${entity.numFactura}")
-            }
-
+                    facturaRepository.save(entity)
+                } else {
+                    if (logger.isDebugEnabled)
+                        logger.info("Factura duplicada: ${entity.numFactura}")
+                }
             return true
         } catch (e: IllegalArgumentException) {
             logger.error("Error de validación: ${e.message}")
@@ -456,25 +458,27 @@ class DirectoryProcessorService(
     fun processCargos(data: List<String>, fileName: String, lineNumber: Int): Boolean {
         return try {
             val numFactura = data[0]
-            val operador = data[1]
-            val tipoCargo = data[2]
-            val monto = data[3].toDouble()
+            if (facturasCache.containsKey(numFactura)) {
+                val operador = data[1]
+                val tipoCargo = data[2]
+                val monto = data[3].toDouble()
 
-            val idUnique = "$fileName:$lineNumber:$numFactura"
+                val idUnique = "$fileName:$lineNumber:$numFactura"
 
-            val cargo = BTDetalleCargos(
-                numFactura = numFactura,
-                operador = operador,
-                tipoCargo = tipoCargo,
-                monto = monto,
-                fechaRegistro = Date(),
-                activo = 1,
-                identificadorUnico = idUnique
-            )
+                val cargo = BTDetalleCargos(
+                    numFactura = numFactura,
+                    operador = operador,
+                    tipoCargo = tipoCargo,
+                    monto = monto,
+                    fechaRegistro = Date(),
+                    activo = 1,
+                    identificadorUnico = idUnique
+                )
 
-            // Guardar en la base de datos
-            if (!cargosRepository.existsByIdentificadorUnico(idUnique)) {
-                cargosRepository.save(cargo)
+                // Guardar en la base de datos
+                if (!cargosRepository.existsByIdentificadorUnico(idUnique)) {
+                    cargosRepository.save(cargo)
+                }
             }
 
             true
@@ -491,7 +495,7 @@ class DirectoryProcessorService(
         buscarEnBD: (String) -> T?, // Función lambda para buscar en la base de datos
         insertarEnBD: () -> T       // Función lambda para insertar en la base de datos
     ): T {
-        return cache[descripcion] ?: synchronized(this) {
+        return cache[descripcion] ?: synchronized(cache) { // Sincronización específica por cache
             cache[descripcion] ?: run {
                 val existente = buscarEnBD(descripcion)
                 if (existente != null) {
@@ -503,11 +507,18 @@ class DirectoryProcessorService(
                         cache[descripcion] = nuevaEntidad
                         nuevaEntidad
                     } catch (ex: DataIntegrityViolationException) {
+                        // Manejo de violaciones de integridad
                         if (ex.cause is SQLIntegrityConstraintViolationException) {
-                            logger.warn("Registro '$descripcion' ya existe. Recuperando de la base de datos.")
+                            logger.warn("Registro '$descripcion' ya existe. Intentando recuperar de la base de datos.")
                             val recuperado = buscarEnBD(descripcion)
-                            recuperado ?: throw ex // Si no se recupera, lanza la excepción
-                        } else throw ex
+                            recuperado ?: throw ex // Si no se recupera, lanza la excepción original
+                        } else {
+                            logger.error("Error al insertar '$descripcion': ${ex.message}", ex)
+                            throw ex
+                        }
+                    } catch (ex: Exception) {
+                        logger.error("Error inesperado al manejar '$descripcion': ${ex.message}", ex)
+                        throw ex
                     }
                 }
             }
@@ -522,18 +533,18 @@ class DirectoryProcessorService(
                 return false
             }
 
-            val localidadDescripcion = values.getOrNull(4)?.uppercase() ?: "DESCONOCIDA"
+            val localidadDescripcion = values.getOrNull(4)?.uppercase() ?: "VACÍO"
             val modalidadDescripcion = values.getOrNull(11)?.uppercase() ?: return false
 
             // Obtener o insertar localidad en caché
             obtenerOInsertarEnCache(
                 cache = localidadesCache,
-                descripcion = localidadDescripcion.ifBlank { "DESCONOCIDA" },
+                descripcion = localidadDescripcion.ifBlank { "VACÍO" },
                 buscarEnBD = { catPoblacionRepository.findByDescripcion(it) }, // Buscar en base de datos
                 insertarEnBD = {
                     catPoblacionRepository.save(
                         CatPoblacion(
-                            descripcion = localidadDescripcion.ifBlank { "DESCONOCIDA" },
+                            descripcion = localidadDescripcion.ifBlank { "VACÍO" },
                             nivel = 1,
                             activo = 1,
                             fechaCreacion = Date()
@@ -544,12 +555,12 @@ class DirectoryProcessorService(
             // Obtener o insertar modalidad en caché
             obtenerOInsertarEnCache(
                 cache = modalidadesCache,
-                descripcion = modalidadDescripcion.ifBlank { "DESCONOCIDA" },
+                descripcion = modalidadDescripcion.ifBlank { "VACÍO" },
                 buscarEnBD = { catTipoLlamadaRepository.findByDescripcion(it) }, // Buscar en base de datos
                 insertarEnBD = {
                     catTipoLlamadaRepository.save(
                         CatTipoLlamada(
-                            descripcion = modalidadDescripcion.ifBlank { "DESCONOCIDA" },
+                            descripcion = modalidadDescripcion.ifBlank { "VACÍO" },
                             nivel = 1,
                             activo = 1,
                             fechaCreacion = Date()
@@ -566,30 +577,36 @@ class DirectoryProcessorService(
     private fun processLLBatchFile(file: File) {
         logger.info("Procesando archivo LL en batch: ${file.name} (${file.length()} bytes)")
 
-        val batchSize = 1000 // Tamaño del lote
+        val batchSize = 500 // Tamaño del lote
         val allSuccess = AtomicBoolean(true)
 
         try {
             file.bufferedReader().useLines { lines ->
-                // Procesa las líneas en lotes de forma secuencial
-                lines.chunked(batchSize).forEach { chunk ->
-                    val batch = mutableListOf<BTDetalleLlamadas>()
-                    chunk.forEach { line ->
-                        try {
-                            val values = line.split("|")
+                val batch = mutableListOf<BTDetalleLlamadas>() // Acumulador para lotes
+                lines.forEach { line ->
+                    try {
+                        if (line.contains("||")) {
+                            logger.error(line.replace("||", "|VACÍO|"))
+                            val values = line.replace("||", "|VACÍO|").split("|")
                             val entity = crearDetalleLlamadasEntity(values)
                             if (entity != null) batch.add(entity)
-                        } catch (e: Exception) {
-                            allSuccess.set(false)
-                            logger.error("Error procesando línea: $line", e)
                         }
-                    }
-                    // Guarda el lote procesado
-                    if (batch.isNotEmpty()) {
-                        guardarLoteLlamadas(batch, file.name)
+
+                        // Guardar el lote cuando alcance el tamaño definido
+                        if (batch.size >= batchSize) {
+                            guardarLoteLlamadas(batch, file.name) // Guardar el lote actual
+                            batch.clear() // Limpiar el acumulador para el próximo lote
+                        }
+                    } catch (e: Exception) {
+                        allSuccess.set(false)
+                        logger.error("Error procesando línea: $line", e)
                     }
                 }
+                if (batch.isNotEmpty()) {
+                    guardarLoteLlamadas(batch, file.name)
+                }
             }
+
 
 // Mueve el archivo dependiendo del éxito o fallo
             if (allSuccess.get()) {
@@ -622,13 +639,32 @@ class DirectoryProcessorService(
             logger.error("Error guardando lote del archivo $fileName: ${e.message}", e)
             batch.forEach { record ->
                 try {
-                    if (!registroExiste(record)) {
+                    val existente = llamadasRepository.findByAllFields(
+                        record.numFactura, record.operador, record.numOrigen, record.numDestino,
+                        record.localidad, record.horaLlamada, record.duracion, record.costo,
+                        record.cargoAdicional, record.tipoCargo, record.modalidad, record.clasificacion
+                    )
+                    if (existente == null) {
+                        logger.info("Guardando nuevo registro con numFactura: ${record.numFactura}")
                         llamadasRepository.save(record)
+                    } else {
+                        logger.warn("El registro ya existe. Actualizando si es necesario.")
+                        llamadasRepository.save(existente)
                     }
                 } catch (ex: ObjectOptimisticLockingFailureException) {
-                    logger.warn("Conflicto detectado para registro $record")
+                    logger.warn("Conflicto detectado. Reintentando...")
+                    try {
+                        val entidadActualizada = llamadasRepository.findById(record.id).orElse(null)
+                        if (entidadActualizada == null) {
+                            logger.error("Entidad no encontrada para ID ${record.id}")
+                            return@forEach
+                        }
+                        llamadasRepository.save(entidadActualizada)
+                    } catch (innerEx: Exception) {
+                        logger.error("Error procesando la entidad con ID ${record.id}", innerEx)
+                    }
                 } catch (ex: Exception) {
-                    logger.error("Error inesperado guardando registro: $record", ex)
+                    logger.error("Error guardando registro individual: ${record.numFactura}", ex)
                 }
             }
         }
@@ -637,11 +673,42 @@ class DirectoryProcessorService(
 
     private fun crearDetalleLlamadasEntity(values: List<String>): BTDetalleLlamadas? {
         return try {
-            val localidadDescripcion = values.getOrNull(4)?.uppercase() ?: "DESCONOCIDA"
-            val modalidadDescripcion = values.getOrNull(11)?.uppercase() ?: "DESCONOCIDA"
 
-            val poblacion = localidadesCache[localidadDescripcion] ?: return null
-            val tipoLlamada = modalidadesCache[modalidadDescripcion] ?: return null
+            val localidadDescripcion = values.getOrNull(4)?.uppercase() ?: "VACÍO"
+            val modalidadDescripcion = values.getOrNull(11)?.uppercase() ?: "VACÍO"
+
+            val poblacion = obtenerOInsertarEnCache(
+                cache = localidadesCache,
+                descripcion = localidadDescripcion.ifBlank { "VACÍO" },
+                buscarEnBD = { catPoblacionRepository.findByDescripcion(it) },
+                insertarEnBD = {
+                    catPoblacionRepository.save(
+                        CatPoblacion(
+                            descripcion = localidadDescripcion.ifBlank { "VACÍO" },
+                            nivel = 1,
+                            activo = 1,
+                            fechaCreacion = Date()
+                        )
+                    )
+                }
+            )
+
+            val tipoLlamada = obtenerOInsertarEnCache(
+                cache = modalidadesCache,
+                descripcion = modalidadDescripcion.ifBlank { "VACÍO" },
+                buscarEnBD = { catTipoLlamadaRepository.findByDescripcion(it) },
+                insertarEnBD = {
+                    catTipoLlamadaRepository.save(
+                        CatTipoLlamada(
+                            descripcion = modalidadDescripcion.ifBlank { "VACÍO" },
+                            nivel = 1,
+                            activo = 1,
+                            fechaCreacion = Date()
+                        )
+                    )
+                }
+            )
+
 
             val parsedDate = parseDate(values.getOrNull(5)?.trim())
             val cost = parseDoubleOrDefault(values.getOrNull(8) ?: "0.0", 0.0, "fileName", "lineNumber")

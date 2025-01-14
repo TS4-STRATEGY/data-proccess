@@ -1,7 +1,8 @@
-package com.bestool.dataproccessor.service
+package com.bestool.dataprocessor.service
 
 import com.bestool.dataprocessor.entity.*
 import com.bestool.dataprocessor.repository.*
+import com.bestool.dataprocessor.utils.Utils.Companion.buildTree
 import com.bestool.dataprocessor.utils.Utils.Companion.getProcessedFiles
 import com.bestool.dataprocessor.utils.Utils.Companion.markFileAsProcessed
 import com.bestool.dataprocessor.utils.Utils.Companion.moveToProcessed
@@ -35,16 +36,16 @@ class DirectoryProcessorService(
     private val cargosRepository: BTDetalleCargosRepository,
     private val llamadasRepository: BTDetalleLlamadasRepository,
 ) {
-    private lateinit var processedDirectory: File
-    private lateinit var failedDirectory: File
-    private lateinit var statusFile: File
-    private lateinit var processedFilesFile: File
-    private val logger = LoggerFactory.getLogger(DirectoryProcessorService::class.java)
+    @Value("\${bestools.main-path}")
+    private lateinit var mainPath: String
+    private var processedDirectory = File("$mainPath/processed")
+    private var failedDirectory = File("$mainPath/failed")
+    private var statusFile = File("$mainPath/processing_status.txt")
+    private var processedFilesFile = File("$processedDirectory/processed_files.txt")
+    private var logger = LoggerFactory.getLogger(DirectoryProcessorService::class.java)
 
     private var localidadesCache = ConcurrentHashMap<String, CatPoblacion>()
     private var modalidadesCache = ConcurrentHashMap<String, CatTipoLlamada>()
-    private var facturasCache = ConcurrentHashMap<String, String>()
-
 
 
     @Async
@@ -66,15 +67,15 @@ class DirectoryProcessorService(
     }
 
     @Async
-    fun processDirectoryAsync(directoryPath: String) {
+    fun processDirectoryAsync() {
+        val directoryPath = "/u01/ArchivosBestools"
         if (directoryPath.isNotEmpty()) {
             val processedPath = "$directoryPath/processed"
             val failedPath = "$directoryPath/failed"
-            val currentStatus = readOrInitializeStatus()
-
             statusFile = File(directoryPath, "processing_status.txt")
             processedFilesFile = File("$processedPath/processed_files.txt")
 
+            val currentStatus = readOrInitializeStatus()
 
             if (currentStatus == "INICIADO") {
                 logger.info("Ya hay un proceso en ejecución.")
@@ -232,6 +233,10 @@ class DirectoryProcessorService(
                             FileOutputStream(outputFile).use { fos ->
                                 zis.copyTo(fos)
                             }
+                            if (outputFile.extension.equals("zip", ignoreCase = true)) {
+                                logger.info("Archivo ZIP detectado dentro del ZIP: ${outputFile.name}")
+                                processZipFile(outputFile)
+                            }
 
                             logger.info("Archivo extraído exitosamente: ${outputFile.absolutePath}")
                         } catch (e: IOException) {
@@ -283,7 +288,7 @@ class DirectoryProcessorService(
 
                 // Procesar todos los registros y determinar el estado global
                 val allSuccessful = records.all { record ->
-                    processFactura(record.toString().split("|"))
+                    processFactura(record.toString().replace("||", "|VACÍO|").split("|"))
                 }
 
                 // Mover el archivo basado en el estado global
@@ -312,7 +317,7 @@ class DirectoryProcessorService(
             }
             val allSuccessful = linesList.mapIndexed { index, line ->
                 processCargos(
-                    line.split("|"), file.name, index + 1
+                    line.replace("||", "|VACÍO|").split("|"), file.name, index + 1
                 )
             }.reduce { acc, result -> acc && result }
             // Mover el archivo basado en el estado global
@@ -331,14 +336,9 @@ class DirectoryProcessorService(
     private fun processLLFile(file: File) {
         logger.info("Procesando catalogos de : ${file.name} (${file.length()} bytes)")
         file.bufferedReader().useLines { lines ->
-            var allSuccessful = true
-
             lines.forEach { line ->
-                if (!processCatalog(line.split("|"))) {
-                    allSuccessful = false
-                }
+                processCatalog(line.replace("||", "|VACÍO|").split("|"))
             }
-
         }
     }
 
@@ -387,64 +387,64 @@ class DirectoryProcessorService(
             val numFactura = values[0].takeIf { it.isNotBlank() }
                 ?: throw IllegalArgumentException("El campo numFactura es obligatorio y está vacío")
 
-                val entity = BTDetalleFactura(
-                    numFactura = numFactura,
-                    referencia = values.getOrNull(24),
-                    operador = values.getOrNull(2),
-                    fechaEmision = values.getOrNull(3)?.let { parseDateBill(it) },
-                    fechaVencimiento = values.getOrNull(4)?.let { parseDateBill(it) },
-                    fechaCorte = values.getOrNull(5)?.let { parseDateBill(it) },
-                    moneda = values.getOrNull(6),
-                    tipoMoneda = values.getOrNull(7),
-                    iva = values.getOrNull(8)?.toDoubleOrNull() ?: 0.0,
-                    subtotal = values.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
-                    impuestos = values.getOrNull(10)?.toDoubleOrNull() ?: 0.0,
-                    total = values.getOrNull(11)?.toDoubleOrNull() ?: 0.0,
-                    totalLetra = values.getOrNull(12),
-                    saldoAnterior = values.getOrNull(13)?.toDoubleOrNull(),
-                    descuento = values.getOrNull(14)?.toDoubleOrNull() ?: 0.0,
-                    otrosCargos = values.getOrNull(15)?.toDoubleOrNull() ?: 0.0,
-                    subtotal2 = values.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
-                    impuestos2 = values.getOrNull(10)?.toDoubleOrNull(),
-                    total2 = values.getOrNull(11)?.toDoubleOrNull(),
-                    totalFinal = values.getOrNull(20)?.toDoubleOrNull(),
-                    nombreCliente = values.getOrNull(21),
-                    descripcionCliente = values.getOrNull(22),
-                    sucursal = values.getOrNull(23),
-                    numeroCuenta = values.getOrNull(24),
-                    rfc = values.getOrNull(25),
-                    referenciaAdicional = "",
-                    nombreClienteAdicional = values.getOrNull(26),
-                    domicilio = values.getOrNull(27),
-                    ubicacion = values.getOrNull(30),
-                    localidad = values.getOrNull(31),
-                    estado = values.getOrNull(32),
-                    municipio = values.getOrNull(33),
-                    codigoPostal = values.getOrNull(34),
-                    pais = values.getOrNull(35),
-                    domicilioFiscal = values.getOrNull(36),
-                    ubicacionFiscal = values.getOrNull(37),
-                    localidadFiscal = values.getOrNull(38),
-                    estadoFiscal = values.getOrNull(39),
-                    municipioFiscal = values.getOrNull(40),
-                    codigoPostalFiscal = values.getOrNull(41),
-                    numFacturacion = values.getOrNull(41) ?: "N/A",
-                    paisFiscal = values.getOrNull(35),
-                    notas = "",
-                    fechaCreacion = Date(),
-                    activo = 1
-                )
+            val entity = BTDetalleFactura(
+                numFactura = numFactura,
+                referencia = values.getOrNull(24),
+                operador = values.getOrNull(2),
+                fechaEmision = values.getOrNull(3)?.let { parseDateBill(it) },
+                fechaVencimiento = values.getOrNull(4)?.let { parseDateBill(it) },
+                fechaCorte = values.getOrNull(5)?.let { parseDateBill(it) },
+                moneda = values.getOrNull(6),
+                tipoMoneda = values.getOrNull(7),
+                iva = values.getOrNull(8)?.toDoubleOrNull() ?: 0.0,
+                subtotal = values.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
+                impuestos = values.getOrNull(10)?.toDoubleOrNull() ?: 0.0,
+                total = values.getOrNull(11)?.toDoubleOrNull() ?: 0.0,
+                totalLetra = values.getOrNull(12),
+                saldoAnterior = values.getOrNull(13)?.toDoubleOrNull(),
+                descuento = values.getOrNull(14)?.toDoubleOrNull() ?: 0.0,
+                otrosCargos = values.getOrNull(15)?.toDoubleOrNull() ?: 0.0,
+                subtotal2 = values.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
+                impuestos2 = values.getOrNull(10)?.toDoubleOrNull(),
+                total2 = values.getOrNull(11)?.toDoubleOrNull(),
+                totalFinal = values.getOrNull(20)?.toDoubleOrNull(),
+                nombreCliente = values.getOrNull(21),
+                descripcionCliente = values.getOrNull(22),
+                sucursal = values.getOrNull(23),
+                numeroCuenta = values.getOrNull(24),
+                rfc = values.getOrNull(25),
+                referenciaAdicional = "",
+                nombreClienteAdicional = values.getOrNull(26),
+                domicilio = values.getOrNull(27),
+                ubicacion = values.getOrNull(30),
+                localidad = values.getOrNull(31),
+                estado = values.getOrNull(32),
+                municipio = values.getOrNull(33),
+                codigoPostal = values.getOrNull(34),
+                pais = values.getOrNull(35),
+                domicilioFiscal = values.getOrNull(36),
+                ubicacionFiscal = values.getOrNull(37),
+                localidadFiscal = values.getOrNull(38),
+                estadoFiscal = values.getOrNull(39),
+                municipioFiscal = values.getOrNull(40),
+                codigoPostalFiscal = values.getOrNull(41),
+                numFacturacion = values.getOrNull(41) ?: "N/A",
+                paisFiscal = values.getOrNull(35),
+                notas = "",
+                fechaCreacion = Date(),
+                activo = 1
+            )
 
 
+            if (logger.isDebugEnabled)
+                logger.info("BT_DETALLE_FACTURA: $entity")
+            if (!facturaRepository.existsByFactura(numFactura, entity.referencia)) {
+
+                facturaRepository.save(entity)
+            } else {
                 if (logger.isDebugEnabled)
-                    logger.info("BT_DETALLE_FACTURA: $entity")
-                if (!facturaRepository.existsByFactura(numFactura, entity.referencia)) {
-
-                    facturaRepository.save(entity)
-                } else {
-                    if (logger.isDebugEnabled)
-                        logger.info("Factura duplicada: ${entity.numFactura}")
-                }
+                    logger.info("Factura duplicada: ${entity.numFactura}")
+            }
             return true
         } catch (e: IllegalArgumentException) {
             logger.error("Error de validación: ${e.message}")
@@ -458,29 +458,25 @@ class DirectoryProcessorService(
     fun processCargos(data: List<String>, fileName: String, lineNumber: Int): Boolean {
         return try {
             val numFactura = data[0]
-            if (facturasCache.containsKey(numFactura)) {
-                val operador = data[1]
-                val tipoCargo = data[2]
-                val monto = data[3].toDouble()
+            val operador = data[1]
+            val tipoCargo = data[2]
+            val monto = data[3].toDouble()
 
-                val idUnique = "$fileName:$lineNumber:$numFactura"
+            val idUnique = "$fileName:$lineNumber:$numFactura"
 
-                val cargo = BTDetalleCargos(
-                    numFactura = numFactura,
-                    operador = operador,
-                    tipoCargo = tipoCargo,
-                    monto = monto,
-                    fechaRegistro = Date(),
-                    activo = 1,
-                    identificadorUnico = idUnique
-                )
-
-                // Guardar en la base de datos
-                if (!cargosRepository.existsByIdentificadorUnico(idUnique)) {
-                    cargosRepository.save(cargo)
-                }
+            val cargo = BTDetalleCargos(
+                numFactura = numFactura,
+                operador = operador,
+                tipoCargo = tipoCargo,
+                monto = monto,
+                fechaRegistro = Date(),
+                activo = 1,
+                identificadorUnico = idUnique
+            )
+            // Guardar en la base de datos
+            if (!cargosRepository.existsByIdentificadorUnico(idUnique)) {
+                cargosRepository.save(cargo)
             }
-
             true
         } catch (e: Exception) {
             logger.error("Error procesando cargo en archivo $fileName línea $lineNumber: ${data.joinToString("|")}", e)
@@ -495,7 +491,7 @@ class DirectoryProcessorService(
         buscarEnBD: (String) -> T?, // Función lambda para buscar en la base de datos
         insertarEnBD: () -> T       // Función lambda para insertar en la base de datos
     ): T {
-        return cache[descripcion] ?: synchronized(cache) { // Sincronización específica por cache
+        return cache[descripcion] ?: synchronized(cache) { // Sincronización específica por caché
             cache[descripcion] ?: run {
                 val existente = buscarEnBD(descripcion)
                 if (existente != null) {
@@ -581,32 +577,29 @@ class DirectoryProcessorService(
         val allSuccess = AtomicBoolean(true)
 
         try {
-            file.bufferedReader().useLines { lines ->
+            file.bufferedReader().use { reader ->
                 val batch = mutableListOf<BTDetalleLlamadas>() // Acumulador para lotes
-                lines.forEach { line ->
-                    try {
-                        if (line.contains("||")) {
-                            logger.error(line.replace("||", "|VACÍO|"))
+                reader.useLines { lines ->
+                    lines.forEach { line ->
+                        try {
                             val values = line.replace("||", "|VACÍO|").split("|")
                             val entity = crearDetalleLlamadasEntity(values)
                             if (entity != null) batch.add(entity)
+                            // Guardar el lote cuando alcance el tamaño definido
+                            if (batch.size >= batchSize) {
+                                guardarLoteLlamadas(batch, file.name) // Guardar el lote actual
+                                batch.clear() // Limpiar el acumulador para el próximo lote
+                            }
+                        } catch (e: Exception) {
+                            allSuccess.set(false)
+                            logger.error("Error procesando línea: $line", e)
                         }
-
-                        // Guardar el lote cuando alcance el tamaño definido
-                        if (batch.size >= batchSize) {
-                            guardarLoteLlamadas(batch, file.name) // Guardar el lote actual
-                            batch.clear() // Limpiar el acumulador para el próximo lote
-                        }
-                    } catch (e: Exception) {
-                        allSuccess.set(false)
-                        logger.error("Error procesando línea: $line", e)
+                    }
+                    if (batch.isNotEmpty()) {
+                        guardarLoteLlamadas(batch, file.name)
                     }
                 }
-                if (batch.isNotEmpty()) {
-                    guardarLoteLlamadas(batch, file.name)
-                }
             }
-
 
 // Mueve el archivo dependiendo del éxito o fallo
             if (allSuccess.get()) {
@@ -735,6 +728,66 @@ class DirectoryProcessorService(
             logger.error("Error creando entidad para los valores: $values", e)
             null
         }
+    }
+
+    fun restoreFiles(): String {
+        return try {
+            // Eliminar archivos auxiliares
+            if (statusFile.exists()) {
+                statusFile.delete()
+                logger.info("Archivo 'processing_status.txt' eliminado.")
+            }
+
+            if (processedFilesFile.exists()) {
+                processedFilesFile.delete()
+                logger.info("Archivo 'processed_files.txt' eliminado.")
+            }
+            if (processedDirectory.exists()) {
+                moveFilesToRoot(processedDirectory)
+                processedDirectory.deleteRecursively()
+                logger.info("Directorio 'processed' restaurado y eliminado.")
+            }
+
+            if (failedDirectory.exists()) {
+                moveFilesToRoot(failedDirectory)
+                failedDirectory.deleteRecursively()
+                logger.info("Directorio 'failed' restaurado y eliminado.")
+            }
+
+            "Archivos restaurados correctamente. Los directorios 'processed' y 'failed' han sido eliminados."
+        } catch (e: Exception) {
+            logger.error("Error al restaurar los archivos: ${e.message}", e)
+            throw RuntimeException("Error al restaurar los archivos: ${e.message}")
+        }
+    }
+
+    private fun moveFilesToRoot(directory: File) {
+        directory.walkTopDown().forEach { file ->
+            if (file.isFile) {
+                val targetFile = File(directory.parentFile, file.name)
+                if (!targetFile.exists()) {
+                    file.copyTo(targetFile, overwrite = true)
+                    logger.info("Archivo restaurado: ${file.name} a la raíz del directorio.")
+                }
+                file.delete()
+            }
+        }
+    }
+
+    fun listDirectoryTree(sourceDirectory: String? = ""): String {
+        val directory = if (sourceDirectory.isNullOrEmpty()) {
+            File(mainPath)
+        } else {
+            File(sourceDirectory)
+        }
+
+        if (!directory.exists() || !directory.isDirectory) {
+            throw IllegalArgumentException("El directorio especificado no existe o no es válido: $directory")
+        }
+
+        val builder = StringBuilder()
+        buildTree(directory, builder, "")
+        return builder.toString()
     }
 
 

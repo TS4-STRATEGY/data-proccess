@@ -198,6 +198,29 @@ open class Utils {
         }
 
 
+        fun ensureLogDirectoryExists(logDirectory: String) : File {
+            val dir = File(logDirectory)
+            if (!dir.exists()) {
+                if (dir.mkdirs()) {
+                    logger.info("Directorio de logs creado: $logDirectory")
+                }
+            }
+            return dir
+        }
+
+         fun buildTree(file: File, builder: StringBuilder, prefix: String) {
+            builder.append(prefix).append(if (file.isDirectory) "[DIR] " else "[FILE] ").append(file.name).append("\n")
+
+            if (file.isDirectory) {
+                val children: Array<File> = file.listFiles()?.sortedBy { it.name }?.toTypedArray() ?: emptyArray()
+                for (i in children.indices) {
+                    val child = children[i]
+                    val isLast = i == children.size - 1
+                    val newPrefix = prefix + if (isLast) "+-- " else "|-- "
+                    buildTree(child, builder, newPrefix)
+                }
+            }
+        }
 
     }
 

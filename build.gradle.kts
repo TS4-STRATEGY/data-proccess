@@ -44,7 +44,7 @@ dependencies {
     implementation("com.oracle.database.jdbc:ojdbc8")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.4")
-    implementation("ch.qos.logback:logback-classic:1.4.11")
+    implementation("ch.qos.logback:logback-classic:1.2.3")
 
     implementation("org.springframework.boot:spring-boot-starter-batch:2.6.14")
     implementation("org.springframework.boot:spring-boot-starter-actuator:2.6.14")

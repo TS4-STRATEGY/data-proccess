@@ -8,8 +8,8 @@ import org.springframework.scheduling.annotation.EnableAsync
 @SpringBootApplication
 @PropertySource("classpath:application.properties")
 @EnableAsync
-class DataProccessorApplication
+class DataProcessorApplication
 
 fun main(args: Array<String>) {
-    runApplication<DataProccessorApplication>(*args)
+    runApplication<DataProcessorApplication>(*args)
 }

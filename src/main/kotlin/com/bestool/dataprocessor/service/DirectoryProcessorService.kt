@@ -67,7 +67,7 @@ class DirectoryProcessorService(
 
     @Async
     fun processDirectoryAsync() {
-        val directoryPath = "/u01/ArchivosBestools"
+        val directoryPath = mainPath
         if (directoryPath.isNotEmpty()) {
             val processedPath = "$directoryPath/processed"
             val failedPath = "$directoryPath/failed"
@@ -76,12 +76,17 @@ class DirectoryProcessorService(
 
             val currentStatus = readOrInitializeStatus()
 
-            if (currentStatus == "INICIADO") {
-                logger.info("Ya hay un proceso en ejecución.")
-                return
+            when (currentStatus) {
+                "INICIADO" -> {
+                    logger.info("Ya hay un proceso en ejecución.")
+                    return
+                }
+                else ->{
+                    updateStatus("INICIADO")
+                }
             }
 
-            updateStatus("INICIADO")
+
 
             try {
 
@@ -172,6 +177,7 @@ class DirectoryProcessorService(
                     try {
                         processLLBatchFile(file) // Cambiamos el método para usar batch
                     } catch (e: Exception) {
+                        updateStatus("ERROR: ${e.message}")
                         logger.error("Error al procesar el archivo LL: ${file.name}", e)
                         moveToProcessed(file, failedDirectory)
                     }
@@ -787,6 +793,11 @@ class DirectoryProcessorService(
         val builder = StringBuilder()
         buildTree(directory, builder, "")
         return builder.toString()
+    }
+
+    fun unlock(): String {
+        updateStatus("UNLOCK")
+        return "UNLOCK"
     }
 
 

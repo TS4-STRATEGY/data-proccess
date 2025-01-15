@@ -7,8 +7,7 @@ import java.util.*
 @Table(name = "BT_DETALLE_LLAMADAS", schema = "QA_BESTOOLS_OWNER")
 data class BTDetalleLlamadas(
     @Id
-    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "QA_BESTOOLS_OWNER.SEQ_BT_DETALLE_LLAMADAS")
-    @SequenceGenerator(name = "QA_BESTOOLS_OWNER.SEQ_BT_DETALLE_LLAMADAS", sequenceName = "QA_BESTOOLS_OWNER.SEQ_BT_DETALLE_LLAMADAS", allocationSize = 1)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "BDL_ID") val id: Long = 0,
     @Column(name = "BDL_NUM_FACTURA") val numFactura: String,
     @Column(name = "BDL_OPERADOR") val operador: String?,

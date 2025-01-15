@@ -7,8 +7,7 @@ import javax.persistence.*
 @Table(name = "BT_DETALLE_CARGOS", schema = "QA_BESTOOLS_OWNER")
 data class BTDetalleCargos(
     @Id
-    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "QA_BESTOOLS_OWNER.SEQ_BT_DETALLE_CARGOS")
-    @SequenceGenerator(name = "QA_BESTOOLS_OWNER.SEQ_BT_DETALLE_CARGOS", sequenceName = "QA_BESTOOLS_OWNER.SEQ_BT_DETALLE_CARGOS", allocationSize = 1)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "BDC_ID")
     val id: Long = 0,
 

@@ -1,5 +1,5 @@
 <configuration>
-    <property name="LOG_PATH" value="/u01/oracle/apps/bestool/logs" />
+    <property name="LOG_PATH" value="/tmp/oracle/apps/bestool/logs" />
 
     <!-- Appender para archivo -->
     <appender name="FILE" class="ch.qos.logback.core.FileAppender">

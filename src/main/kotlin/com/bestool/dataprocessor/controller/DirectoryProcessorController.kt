@@ -33,6 +33,11 @@ class DirectoryProcessorController(private val directoryProcessorService: Direct
         return directoryProcessorService.getStatus()
     }
 
+    @GetMapping("/unlock")
+    fun unlock(): String {
+        return directoryProcessorService.unlock()
+    }
+
     @GetMapping("/restore-files")
     fun restoreFiles(): ResponseEntity<String> {
         return try {
@@ -49,7 +54,7 @@ class DirectoryProcessorController(private val directoryProcessorService: Direct
     @GetMapping("/last-error")
     fun getLastError(@RequestParam(required = false) lines: Int?): ResponseEntity<*> {
         return try {
-            val logDirectory = ensureLogDirectoryExists("/u01/oracle/apps/bestool/logs/")
+            val logDirectory = ensureLogDirectoryExists("/tmp/oracle/apps/bestool/logs/")
             if (logDirectory.exists() && logDirectory.isDirectory) {
                 val lastModifiedFile = logDirectory.listFiles { file ->
                     file.isFile && file.name.startsWith("application.") // Filtra solo los logs relevantes
@@ -103,7 +108,7 @@ class DirectoryProcessorController(private val directoryProcessorService: Direct
     @GetMapping("/tree-logs")
     fun getDirectoryTreeLogs(): ResponseEntity<String> {
         return try {
-            val logDirectory = ensureLogDirectoryExists("/u01/oracle/apps/bestool/logs/")
+            val logDirectory = ensureLogDirectoryExists("/tmp/oracle/apps/bestool/logs/")
             val tree = directoryProcessorService.listDirectoryTree(logDirectory.path)
             ResponseEntity.ok(tree)
         } catch (e: IllegalArgumentException) {

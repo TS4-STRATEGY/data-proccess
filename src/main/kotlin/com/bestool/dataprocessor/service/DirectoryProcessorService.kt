@@ -35,9 +35,8 @@ class DirectoryProcessorService(
     private val facturaRepository: BTDetalleFacturaRepository,
     private val cargosRepository: BTDetalleCargosRepository,
     private val llamadasRepository: BTDetalleLlamadasRepository,
+    @Value("\${bestools.main-path}") private var mainPath: String
 ) {
-    @Value("\${bestools.main-path}")
-    private lateinit var mainPath: String
     private var processedDirectory = File("$mainPath/processed")
     private var failedDirectory = File("$mainPath/failed")
     private var statusFile = File("$mainPath/processing_status.txt")

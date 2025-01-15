@@ -5,7 +5,7 @@ import org.springframework.boot.runApplication
 import org.springframework.context.annotation.PropertySource
 import org.springframework.scheduling.annotation.EnableAsync
 
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = ["com.bestool"])
 @PropertySource("classpath:application.properties")
 @EnableAsync
 class DataProcessorApplication

@@ -10,10 +10,14 @@
         <jndi-name>jdbc/ASP</jndi-name>
     </resource-description>
 
+    <container-descriptor>
+        <prefer-web-inf-classes>true</prefer-web-inf-classes>
+    </container-descriptor>
     <!-- Configuración de roles (opcional) -->
     <security-role-assignment>
         <role-name>admin</role-name>
         <principal-name>weblogic</principal-name>
     </security-role-assignment>
+
 
 </weblogic-web-app>

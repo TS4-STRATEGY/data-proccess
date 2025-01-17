@@ -21,6 +21,7 @@ class FacturasService(private val facturaRepository: BTDetalleFacturaRepository)
         bills.forEach { file ->
             processCRTFile(file, processedDirectory, failedDirectory)
         }
+        logger.info("FACTURAS PROCESADAS")
     }
 
     private fun processCRTFile(file: File, processedDirectory: File, failedDirectory: File) {

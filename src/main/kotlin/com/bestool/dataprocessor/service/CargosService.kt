@@ -22,6 +22,7 @@ class CargosService(private val cargosRepository: BTDetalleCargosRepository) {
         charges.forEach { file ->
             processCRGFile(file,processedDirectory,failedDirectory)
         }
+        logger.info("CARGOS PROCESADOS")
     }
 
     private fun processCRGFile(file: File, processedDirectory: File, failedDirectory: File) {

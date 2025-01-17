@@ -98,7 +98,7 @@ class DirectoryProcessorService(
                     moveToProcessed(file, failedDirectory)
                 }
             }
-
+            logger.info("DATOS DE LLAMADA PROCESADOS")
         } catch (e: Exception) {
             logger.error("Error durante el procesamiento: ", e)
         }

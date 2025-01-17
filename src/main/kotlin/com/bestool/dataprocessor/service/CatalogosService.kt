@@ -54,6 +54,7 @@ class CatalogosService(
                 moveToProcessed(file, failedDirectory)
             }
         }
+        logger.info("CATALOGOS PROCESADOS")
     }
 
     private fun processLLFile(file: File) {

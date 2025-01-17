@@ -13,3 +13,4 @@ class DataProcessorApplication
 fun main(args: Array<String>) {
     runApplication<DataProcessorApplication>(*args)
 }
+

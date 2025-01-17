@@ -1,7 +1,12 @@
 package com.bestool.dataprocessor.utils
 
 
+import com.bestool.dataprocessor.dto.ProgresoProceso
+import com.bestool.dataprocessor.entity.BTDetalleLlamadas
+import com.fasterxml.jackson.core.type.TypeReference
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import java.io.File
 import java.io.PrintWriter
 import java.nio.file.Files
@@ -14,14 +19,9 @@ open class Utils {
 
     companion object {
 
-
         private val logger = LoggerFactory.getLogger(Utils::class.java)
+        val progresoFile = File("progreso.json")
 
-        private val dateFormats = listOf(
-            SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH),
-            SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH),
-            SimpleDateFormat("MM/dd/yyyy", Locale.ENGLISH)
-        )
 
         val monthMap = mapOf(
             "Jan" to "01", "Ene" to "01",
@@ -122,9 +122,35 @@ open class Utils {
         }
 
         fun moveToProcessed(file: File, processedDirectory: File) {
-            val target = File(processedDirectory, file.name)
-            Files.move(file.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            //logger.info("Archivo movido a procesados: ${file.name}")
+            try {
+                if (file.exists()) {
+                    val destination = File(processedDirectory, file.name)
+                    Files.move(file.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                    logger.info("Archivo movido: ${file.name}")
+                } else {
+                    logger.info("El archivo no existe: ${file.absolutePath}")
+                }
+            } catch (e: Exception) {
+                logger.error("Error moviendo archivo ${file.name}: ${e.message}")
+                throw e
+            }
+        }
+
+        fun removeDuplicates(files: List<File>): List<File> {
+            val uniqueFilesMap = mutableMapOf<String, File>()
+
+            files.forEach { file ->
+                val key = "${file.nameWithoutExtension}-${file.length()}" // Clave única: nombre base y tamaño
+                if (!uniqueFilesMap.containsKey(key)) {
+                    uniqueFilesMap[key] = file // Agregar el primer archivo encontrado
+                } else {
+                    // Si ya existe en el mapa, es un duplicado
+                    file.delete()
+                    logger.info("Duplicado eliminado: ${file.path}")
+                }
+            }
+
+            return uniqueFilesMap.values.toList() // Retornar solo archivos únicos
         }
 
 
@@ -139,15 +165,18 @@ open class Utils {
             }
         }
 
-        fun getProcessedFiles(processedFilesFile: File): Set<String> {
-            if (!processedFilesFile.exists()) {
-                processedFilesFile.createNewFile()
-            }
-            return processedFilesFile.readLines().toSet()
-        }
 
-        fun markFileAsProcessed(processedFilesFile: File, fileName: String) {
-            processedFilesFile.appendText("$fileName\n")
+        fun moveFilesToRoot(directory: File) {
+            directory.walkTopDown().forEach { file ->
+                if (file.isFile) {
+                    val targetFile = File(directory.parentFile, file.name)
+                    if (!targetFile.exists()) {
+                        file.copyTo(targetFile, overwrite = true)
+                        logger.info("Archivo restaurado: ${file.name} a la raíz del directorio.")
+                    }
+                    file.delete()
+                }
+            }
         }
 
         fun splitFileBySizeAndLines(file: File, maxSizeInMB: Int): List<File> {
@@ -198,7 +227,7 @@ open class Utils {
         }
 
 
-        fun ensureLogDirectoryExists(logDirectory: String) : File {
+        fun ensureLogDirectoryExists(logDirectory: String): File {
             val dir = File(logDirectory)
             if (!dir.exists()) {
                 if (dir.mkdirs()) {
@@ -208,7 +237,7 @@ open class Utils {
             return dir
         }
 
-         fun buildTree(file: File, builder: StringBuilder, prefix: String) {
+        fun buildTree(file: File, builder: StringBuilder, prefix: String) {
             builder.append(prefix).append(if (file.isDirectory) "[DIR] " else "[FILE] ").append(file.name).append("\n")
 
             if (file.isDirectory) {
@@ -220,6 +249,93 @@ open class Utils {
                     buildTree(child, builder, newPrefix)
                 }
             }
+        }
+
+        fun calcularTotalLineas(
+            archivosFactura: List<File>,
+            archivosProcesados: List<File>,
+            numFactura: String
+        ): Long {
+            val lineasFactura = archivosFactura.sumOf { archivo ->
+                try {
+                    archivo.useLines { it.count() }
+                } catch (e: Exception) {
+                    logger.error("Error leyendo archivo: ${archivo.name} -> ${e.message}")
+                    0
+                }
+            }
+
+            val lineasProcesadas = archivosProcesados
+                .filter { it.name.contains(numFactura, ignoreCase = true) }
+                .sumOf { archivo ->
+                    try {
+                        archivo.useLines { it.count() }
+                    } catch (e: Exception) {
+                        logger.error("Error leyendo archivo procesado: ${archivo.name} -> ${e.message}")
+                        0
+                    }
+                }
+
+            return lineasFactura.toLong() + lineasProcesadas.toLong()
+        }
+
+        fun listDirectoryTree(directory: File?): String {
+            val builder = StringBuilder()
+            if (directory != null) {
+                if (!directory.exists() || !directory.isDirectory) {
+                    throw IllegalArgumentException("El directorio especificado no existe o no es válido: $directory")
+                }
+                buildTree(directory, builder, "")
+            }
+            return builder.toString()
+        }
+
+
+        fun saveProgress(progreso: ProgresoProceso) {
+            try {
+                val mapper = jacksonObjectMapper()
+                val progresoList: MutableList<ProgresoProceso> = if (progresoFile.exists()) {
+                    mapper.readValue(progresoFile, object : TypeReference<MutableList<ProgresoProceso>>() {})
+                } else {
+                    mutableListOf()
+                }
+
+                // Actualizar o agregar progreso
+                val index = progresoList.indexOfFirst { it.archivo == progreso.archivo }
+                if (index != -1) {
+                    progresoList[index] = progreso
+                } else {
+                    progresoList.add(progreso)
+                }
+
+                mapper.writeValue(progresoFile, progresoList)
+                logger.info("Progreso guardado: $progreso")
+            } catch (e: Exception) {
+                logger.error("Error guardando progreso: ${e.message}")
+            }
+        }
+
+        // Función para extraer el número de parte del nombre del archivo
+        fun extractPartNumber(fileName: String): Int {
+            val match = Regex("part(\\d+)", RegexOption.IGNORE_CASE).find(fileName)
+            return match?.groups?.get(1)?.value?.toIntOrNull() ?: Int.MAX_VALUE
+        }
+
+        private fun compararRegistros(a: BTDetalleLlamadas?, b: BTDetalleLlamadas?): Boolean {
+            return a != null && b != null &&
+                    a.numFactura == b.numFactura &&
+                    a.operador == b.operador &&
+                    a.numOrigen == b.numOrigen &&
+                    a.numDestino == b.numDestino &&
+                    a.localidad == b.localidad &&
+                    a.fechaLlamada == b.fechaLlamada &&
+                    a.horaLlamada == b.horaLlamada &&
+                    a.duracion == b.duracion &&
+                    a.costo == b.costo &&
+                    a.cargoAdicional == b.cargoAdicional &&
+                    a.tipoCargo == b.tipoCargo &&
+                    a.modalidad == b.modalidad &&
+                    a.clasificacion == b.clasificacion
         }
 
     }

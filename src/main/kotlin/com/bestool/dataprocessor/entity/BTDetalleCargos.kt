@@ -1,5 +1,6 @@
 package com.bestool.dataprocessor.entity
 
+import java.math.BigDecimal
 import java.util.*
 import javax.persistence.*
 
@@ -7,8 +8,9 @@ import javax.persistence.*
 @Table(name = "BT_DETALLE_CARGOS", schema = "QA_BESTOOLS_OWNER")
 data class BTDetalleCargos(
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "BDC_ID")
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "QA_BESTOOLS_OWNER.SEQ_BT_DETALLE_CARGOS")
+    @SequenceGenerator(name = "QA_BESTOOLS_OWNER.SEQ_BT_DETALLE_CARGOS", sequenceName = "QA_BESTOOLS_OWNER.SEQ_BT_DETALLE_CARGOS", allocationSize = 1)
+    @Column(name = "BDC_ID", insertable = false, updatable = false)
     val id: Long = 0,
 
     @Column(name = "BDC_NUM_FACTURA")
@@ -20,8 +22,8 @@ data class BTDetalleCargos(
     @Column(name = "BDC_TIPO_CARGO")
     val tipoCargo: String? = null,
 
-    @Column(name = "BDC_MONTO")
-    val monto: Double? = null,
+    @Column(name = "BDC_MONTO", columnDefinition = "NUMBER")
+    val monto: BigDecimal? = null,
 
     @Temporal(TemporalType.TIMESTAMP)
     @Column(name = "BDC_FECHA_REGISTRO")

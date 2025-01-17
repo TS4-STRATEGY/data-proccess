@@ -1,615 +1,258 @@
 package com.bestool.dataprocessor.service
 
-import com.bestool.dataprocessor.entity.*
-import com.bestool.dataprocessor.repository.*
-import com.bestool.dataprocessor.utils.Utils.Companion.buildTree
-import com.bestool.dataprocessor.utils.Utils.Companion.getProcessedFiles
-import com.bestool.dataprocessor.utils.Utils.Companion.markFileAsProcessed
+import com.bestool.dataprocessor.dto.FacturaDTO
+import com.bestool.dataprocessor.dto.ProgresoProceso
+import com.bestool.dataprocessor.entity.BTDetalleLlamadas
+import com.bestool.dataprocessor.repository.BTDetalleLlamadasRepository
+import com.bestool.dataprocessor.utils.UtilCaster.Companion.crearDetalleLlamadasEntity
+import com.bestool.dataprocessor.utils.Utils
+import com.bestool.dataprocessor.utils.Utils.Companion.calcularTotalLineas
+import com.bestool.dataprocessor.utils.Utils.Companion.moveFilesToRoot
 import com.bestool.dataprocessor.utils.Utils.Companion.moveToProcessed
-import com.bestool.dataprocessor.utils.Utils.Companion.parseDate
-import com.bestool.dataprocessor.utils.Utils.Companion.parseDateBill
-import com.bestool.dataprocessor.utils.Utils.Companion.parseDoubleOrDefault
-import com.bestool.dataprocessor.utils.Utils.Companion.splitFileBySizeAndLines
+import com.bestool.dataprocessor.utils.Utils.Companion.saveProgress
+import com.fasterxml.jackson.core.type.TypeReference
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.dao.DataIntegrityViolationException
-import org.springframework.orm.ObjectOptimisticLockingFailureException
+import org.springframework.core.task.TaskRejectedException
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.io.IOException
-import java.sql.SQLIntegrityConstraintViolationException
-import java.util.*
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
+import javax.annotation.PostConstruct
 
 @Service
 class DirectoryProcessorService(
-    @Value("\${directory.part.size}") private val size: Int,
-    private val catPoblacionRepository: CatPoblacionRepository,
-    private val catTipoLlamadaRepository: CatTipoLlamadaRepository,
-    private val facturaRepository: BTDetalleFacturaRepository,
-    private val cargosRepository: BTDetalleCargosRepository,
     private val llamadasRepository: BTDetalleLlamadasRepository,
+    private val transactionalService: TransactionalService,
+    private val catalogosService: CatalogosService,
+    private val cargosService: CargosService,
+    private val facturasService: FacturasService,
     @Value("\${bestools.main-path}") private var mainPath: String
 ) {
+    var directory = File(mainPath)
     private var processedDirectory = File("$mainPath/processed")
     private var failedDirectory = File("$mainPath/failed")
-    private var statusFile = File("$mainPath/processing_status.txt")
-    private var processedFilesFile = File("$processedDirectory/processed_files.txt")
     private var logger = LoggerFactory.getLogger(DirectoryProcessorService::class.java)
 
-    private var localidadesCache = ConcurrentHashMap<String, CatPoblacion>()
-    private var modalidadesCache = ConcurrentHashMap<String, CatTipoLlamada>()
 
-
-    @Async
-    fun precargarCatalogos() {
+    @PostConstruct
+    fun initializeDirectories() {
         try {
-            localidadesCache.putAll(
-                catPoblacionRepository.findAll().associateBy({ it.descripcion.uppercase(Locale.getDefault()) }, { it })
-            )
+            val directory = File(mainPath)
+            if (!directory.exists() || !directory.isDirectory) {
+                logger.error("El directorio no existe o no es válido: $mainPath")
+                return
+            }
 
-            modalidadesCache.putAll(
-                catTipoLlamadaRepository.findAll()
-                    .associateBy({ it.descripcion.uppercase(Locale.getDefault()) }, { it })
-            )
+            processedDirectory.apply {
+                if (!exists()) {
+                    mkdirs()
+                    logger.info("Directorio para procesar creado: ${processedDirectory.absolutePath}")
+                }
+            }
 
-            logger.info("Localidades y modalidades precargadas en caché.")
+
+            failedDirectory.apply {
+                if (exists()) {
+                    mkdirs()
+                    logger.info("Directorio para fallas creado: ${failedDirectory.absolutePath}")
+                }
+            }
+
         } catch (e: Exception) {
-            logger.error("Error al precargar los catálogos en caché", e)
+            logger.error("Error inicializando directorios: ${e.message}", e)
+            throw IllegalStateException("No se pudieron inicializar los directorios", e)
         }
     }
+
 
     @Async
     fun processDirectoryAsync() {
-        val directoryPath = mainPath
-        if (directoryPath.isNotEmpty()) {
-            val processedPath = "$directoryPath/processed"
-            val failedPath = "$directoryPath/failed"
-            statusFile = File(directoryPath, "processing_status.txt")
-            processedFilesFile = File("$processedPath/processed_files.txt")
+        try {
+            catalogosService.loadCache()
+            logger.info("PROCESANDO DETALLE DE LLAMADAS: ")
+            val details = directory.walkTopDown()
+                .filter { it.isFile && it.extension.equals("ll", ignoreCase = true) }
+                .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }
+                .toList()
+                .sortedWith(compareBy<File> { it.length() } // Ordenar por tamaño primero
+                    .thenBy {
+                        if (it.name.contains(
+                                "part",
+                                ignoreCase = true
+                            )
+                        ) 1 else 0
+                    } // Luego, los que tienen 'partX' al final
+                    .thenBy { it.name })
 
-            val currentStatus = readOrInitializeStatus()
+            logger.info("VERIFICANDO INTEGRIDAD: ")
+            verificarFacturasConArchivos(details)
 
-            when (currentStatus) {
-                "INICIADO" -> {
-                    logger.info("Ya hay un proceso en ejecución.")
-                    return
-                }
-                else ->{
-                    updateStatus("INICIADO")
-                }
-            }
-
-
-
-            try {
-
-                val directory = File(directoryPath)
-
-                if (!directory.exists() || !directory.isDirectory) {
-                    logger.error("El directorio no existe o no es válido: $directoryPath")
-                    return
-                }
-
-                processedDirectory = File(processedPath)
-                if (!processedDirectory.exists()) processedDirectory.mkdirs()
-
-
-                failedDirectory = File(failedPath)
-                if (!failedDirectory.exists()) failedDirectory.mkdirs()
-
-                precargarCatalogos()
-                getProcessedFiles(processedFilesFile)
-
-                logger.info("DESCOMPRIMIENDO DATA: ")
-                val zips = directory.walkTopDown().filter { it.isFile && it.extension.equals("zip", ignoreCase = true) }
-                    .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }.toList()
-                    .sortedBy { it.length() }
-
-                zips.forEach { file ->
-                    processZipFile(file)
-                }
-
-                logger.info("FRACCIONANDO DETALLE DE LLAMADAS: ")
-                val parts = directory.walkTopDown().filter { it.isFile && it.extension.equals("ll", ignoreCase = true) }
-                    .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }.toList()
-                    .sortedBy { it.length() }
-
-                removeDuplicates(parts).forEach { file ->
-                    try {
-                        val partes = splitFileBySizeAndLines(file, size)
-                        if (partes.isNotEmpty() && partes.size >= 2) logger.info("Se generaron ${partes.size} partes:")
-                    } catch (e: Exception) {
-                        logger.error("Error al procesar el archivo LL: ${file.name}", e)
-                        moveToProcessed(file, failedDirectory)
-                    }
-                }
-
-
-                logger.info("PROCESANDO CATALOGOS: ")
-                val data = directory.walkTopDown().filter { it.isFile && it.extension.equals("ll", ignoreCase = true) }
-                    .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }.toList()
-                    .sortedBy { it.length() }
-
-                removeDuplicates(data).forEach { file ->
-                    try {
-                        processLLFile(file) // Cambiamos el método para usar batch
-                    } catch (e: Exception) {
-                        logger.error("Error al procesar el archivo LL: ${file.name}", e)
-                        moveToProcessed(file, failedDirectory)
-                    }
-                }
-
-
-                logger.info("PROCESANDO FACTURAS: ")
-                val bills =
-                    directory.walkTopDown().filter { it.isFile && it.extension.equals("crt", ignoreCase = true) }
-                        .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }.toList()
-                        .sortedBy { it.length() }
-
-                bills.forEach { file ->
-                    processCRTFile(file)
-                }
-
-                logger.info("PROCESANDO CARGOS: ")
-                val charges =
-                    directory.walkTopDown().filter { it.isFile && it.extension.equals("crg", ignoreCase = true) }
-                        .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }.toList()
-                        .sortedBy { it.length() }
-
-                charges.forEach { file ->
-                    processCRGFile(file)
-                }
-
-                logger.info("PROCESANDO DETALLE DE LLAMADAS: ")
-                val details =
-                    directory.walkTopDown().filter { it.isFile && it.extension.equals("ll", ignoreCase = true) }
-                        .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }.toList()
-                        .sortedBy { it.length() }
-
-                removeDuplicates(details).forEach { file ->
-                    try {
-                        processLLBatchFile(file) // Cambiamos el método para usar batch
-                    } catch (e: Exception) {
-                        updateStatus("ERROR: ${e.message}")
-                        logger.error("Error al procesar el archivo LL: ${file.name}", e)
-                        moveToProcessed(file, failedDirectory)
-                    }
-                }
-
-
-
-                updateStatus("COMPLETADO")
-            } catch (e: Exception) {
-                updateStatus("ERROR: ${e.message}")
-                logger.error("Error durante el procesamiento: ", e)
-            }
-        }
-    }
-
-
-    private fun removeDuplicates(files: List<File>): List<File> {
-        val uniqueFilesMap = mutableMapOf<String, File>()
-
-        files.forEach { file ->
-            val key = "${file.nameWithoutExtension}-${file.length()}" // Clave única: nombre base y tamaño
-            if (!uniqueFilesMap.containsKey(key)) {
-                uniqueFilesMap[key] = file // Agregar el primer archivo encontrado
-            } else {
-                // Si ya existe en el mapa, es un duplicado
-                moveToProcessed(file, processedDirectory)
-                markFileAsProcessed(processedFilesFile, file.name)
-                logger.info("Duplicado movido a procesados: ${file.path}")
-            }
-        }
-
-        return uniqueFilesMap.values.toList() // Retornar solo archivos únicos
-    }
-
-
-    private fun processZipFile(zipFile: File) {
-        val zipParentDirectory = zipFile.parentFile // Obtiene el directorio donde se encuentra el ZIP
-
-        ZipInputStream(FileInputStream(zipFile)).use { zis ->
-            var entry: ZipEntry?
-
-            try {
-                while (zis.nextEntry.also { entry = it } != null) {
-                    if (entry!!.isDirectory) {
-                        // Crear subdirectorios si el ZIP contiene carpetas
-                        val dir = File(zipParentDirectory, entry!!.name)
-                        if (!dir.exists()) dir.mkdirs()
-                        logger.info("Directorio creado: ${dir.absolutePath}")
-                    } else {
-                        // Crear archivo dentro del mismo directorio del ZIP
-                        val outputFile = File(zipParentDirectory, entry!!.name)
-                        outputFile.parentFile.mkdirs() // Asegúrate de que los directorios existan
-
-                        logger.info("Extrayendo archivo dentro del ZIP: ${entry!!.name} a ${outputFile.absolutePath}")
-
-                        try {
-                            // Escribir el contenido del archivo ZIP en el archivo físico
-                            FileOutputStream(outputFile).use { fos ->
-                                zis.copyTo(fos)
-                            }
-                            if (outputFile.extension.equals("zip", ignoreCase = true)) {
-                                logger.info("Archivo ZIP detectado dentro del ZIP: ${outputFile.name}")
-                                processZipFile(outputFile)
-                            }
-
-                            logger.info("Archivo extraído exitosamente: ${outputFile.absolutePath}")
-                        } catch (e: IOException) {
-                            logger.error("Error al escribir archivo descomprimido: ${outputFile.name}", e)
-                        }
-                    }
-                    zis.closeEntry() // Cierra la entrada después de procesarla
-                }
-
-                // Si todo el ZIP fue procesado correctamente, muévelo a procesados
-                moveToProcessed(zipFile, processedDirectory)
-                markFileAsProcessed(processedFilesFile, zipFile.name)
-
-            } catch (e: IOException) {
-                logger.error("Error al procesar el archivo ZIP: ${zipFile.name}", e)
-                // Si el procesamiento del ZIP falla, moverlo a fallidos
-                moveToProcessed(zipFile, failedDirectory)
-            }
-        }
-    }
-
-
-    private fun processCRTFile(file: File) {
-        logger.info("Procesando archivo grande: ${file.name} (${file.length()} bytes)")
-
-        file.bufferedReader().use { reader ->
-            if (file.extension.equals("crt", ignoreCase = true)) {
-                val records = mutableListOf<StringBuilder>() // Lista para almacenar registros
-                var currentRecord = StringBuilder()
-
-                // Leer línea por línea y agrupar registros
-                reader.forEachLine { line ->
-                    if (line.startsWith("OFF-")) {
-                        // Si detectamos un nuevo registro, guardamos el anterior
-                        if (currentRecord.isNotEmpty()) {
-                            records.add(currentRecord)
-                        }
-                        currentRecord = StringBuilder(line) // Nuevo registro
-                    } else {
-                        // Agregar la línea al registro actual
-                        currentRecord.append(" ").append(line.trim())
-                    }
-                }
-
-                // Agregar el último registro
-                if (currentRecord.isNotEmpty()) {
-                    records.add(currentRecord)
-                }
-
-                // Procesar todos los registros y determinar el estado global
-                val allSuccessful = records.all { record ->
-                    processFactura(record.toString().replace("||", "|VACÍO|").split("|"))
-                }
-
-                // Mover el archivo basado en el estado global
-                if (allSuccessful) {
-                    moveToProcessed(file, processedDirectory)
-                } else {
+            details.forEach { file ->
+                try {
+                    processLLBatchFile(file) // Cambiamos para usar batch
+                } catch (e: Exception) {
+                    logger.error("Error al procesar el archivo LL: ${file.name}", e)
                     moveToProcessed(file, failedDirectory)
                 }
-
-                // Marcar el archivo como procesado
-                markFileAsProcessed(processedFilesFile, file.name)
             }
+
+        } catch (e: Exception) {
+            logger.error("Error durante el procesamiento: ", e)
         }
 
     }
 
-    private fun processCRGFile(file: File) {
-        logger.info("Procesando archivo: ${file.name} (${file.length()} bytes)")
+    fun verificarFacturasConArchivos(directorio: List<File>) {
+        val facturas = llamadasRepository.findFacturasWithCountAndLastDate().map {
+            FacturaDTO(
+                numFactura = it["BDL_NUM_FACTURA"].toString(),
+                ultimaFecha = it["ULTIMA_FECHA"].toString(),
+                cantidadRegistros = it["CANTIDAD_REGISTROS"].toString().toLong()
+            )
+        }.filter { factura ->
+            directorio.any { file -> file.name.contains(factura.numFactura, ignoreCase = true) }
+        }
 
-        file.bufferedReader().useLines { lines ->
-            val linesList = lines.toList() // Convertimos la secuencia a lista
-            if (linesList.isEmpty()) {
-                logger.error("El archivo ${file.name} está vacío y no se puede procesar.")
-                moveToProcessed(file, failedDirectory)
-                return
+        // Precachea los archivos procesados para evitar múltiples lecturas
+        val archivosProcesados = processedDirectory.listFiles()?.toList() ?: emptyList()
+
+        facturas.forEach { factura ->
+            val archivosFactura = directorio.filter { file ->
+                file.name.contains(factura.numFactura, ignoreCase = true)
             }
-            val allSuccessful = linesList.mapIndexed { index, line ->
-                processCargos(
-                    line.replace("||", "|VACÍO|").split("|"), file.name, index + 1
+
+            saveProgress(
+                ProgresoProceso(
+                    factura = factura.numFactura,
+                    archivo = "",
+                    status = "DOWNLOAD",
+                    numeroLinea = factura.cantidadRegistros
                 )
-            }.reduce { acc, result -> acc && result }
-            // Mover el archivo basado en el estado global
-            if (allSuccessful) {
-                moveToProcessed(file, processedDirectory)
-            } else {
-                moveToProcessed(file, failedDirectory)
-            }
-
-            // Marcar el archivo como procesado
-            markFileAsProcessed(processedFilesFile, file.name)
-        }
-
-    }
-
-    private fun processLLFile(file: File) {
-        logger.info("Procesando catalogos de : ${file.name} (${file.length()} bytes)")
-        file.bufferedReader().useLines { lines ->
-            lines.forEach { line ->
-                processCatalog(line.replace("||", "|VACÍO|").split("|"))
-            }
-        }
-    }
-
-
-    // Lee o inicializa el estado del archivo
-    fun readOrInitializeStatus(): String {
-        return if (statusFile.exists()) {
-            statusFile.readText().ifBlank { "IDLE" }
-        } else {
-            updateStatus("IDLE")
-            "IDLE"
-        }
-    }
-
-    private fun updateStatus(status: String) {
-        try {
-            statusFile.writeText(status)
-            logger.info("Estado actualizado a: $status")
-        } catch (e: Exception) {
-            logger.error("Error al actualizar el archivo de estado", e)
-        }
-    }
-
-    fun getStatus(): String {
-        return try {
-            if (statusFile.exists()) {
-                val status = statusFile.readText().ifBlank { "IDLE" }
-                """{"status": "$status"}"""
-            } else {
-                """{"status": "NO_STATUS_FILE"}"""
-            }
-        } catch (e: Exception) {
-            logger.error("Error al obtener el estado", e)
-            """{"status": "ERROR", "message": "${e.message}"}"""
-        }
-    }
-
-
-    private fun processFactura(values: List<String>): Boolean {
-        if (values.size < 43) {
-            logger.warn("Registro inválido: se esperaban al menos 43 campos, se recibieron ${values.size}. Valores: $values")
-            return false
-        }
-
-        return try {
-            val numFactura = values[0].takeIf { it.isNotBlank() }
-                ?: throw IllegalArgumentException("El campo numFactura es obligatorio y está vacío")
-
-            val entity = BTDetalleFactura(
-                numFactura = numFactura,
-                referencia = values.getOrNull(24),
-                operador = values.getOrNull(2),
-                fechaEmision = values.getOrNull(3)?.let { parseDateBill(it) },
-                fechaVencimiento = values.getOrNull(4)?.let { parseDateBill(it) },
-                fechaCorte = values.getOrNull(5)?.let { parseDateBill(it) },
-                moneda = values.getOrNull(6),
-                tipoMoneda = values.getOrNull(7),
-                iva = values.getOrNull(8)?.toDoubleOrNull() ?: 0.0,
-                subtotal = values.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
-                impuestos = values.getOrNull(10)?.toDoubleOrNull() ?: 0.0,
-                total = values.getOrNull(11)?.toDoubleOrNull() ?: 0.0,
-                totalLetra = values.getOrNull(12),
-                saldoAnterior = values.getOrNull(13)?.toDoubleOrNull(),
-                descuento = values.getOrNull(14)?.toDoubleOrNull() ?: 0.0,
-                otrosCargos = values.getOrNull(15)?.toDoubleOrNull() ?: 0.0,
-                subtotal2 = values.getOrNull(9)?.toDoubleOrNull() ?: 0.0,
-                impuestos2 = values.getOrNull(10)?.toDoubleOrNull(),
-                total2 = values.getOrNull(11)?.toDoubleOrNull(),
-                totalFinal = values.getOrNull(20)?.toDoubleOrNull(),
-                nombreCliente = values.getOrNull(21),
-                descripcionCliente = values.getOrNull(22),
-                sucursal = values.getOrNull(23),
-                numeroCuenta = values.getOrNull(24),
-                rfc = values.getOrNull(25),
-                referenciaAdicional = "",
-                nombreClienteAdicional = values.getOrNull(26),
-                domicilio = values.getOrNull(27),
-                ubicacion = values.getOrNull(30),
-                localidad = values.getOrNull(31),
-                estado = values.getOrNull(32),
-                municipio = values.getOrNull(33),
-                codigoPostal = values.getOrNull(34),
-                pais = values.getOrNull(35),
-                domicilioFiscal = values.getOrNull(36),
-                ubicacionFiscal = values.getOrNull(37),
-                localidadFiscal = values.getOrNull(38),
-                estadoFiscal = values.getOrNull(39),
-                municipioFiscal = values.getOrNull(40),
-                codigoPostalFiscal = values.getOrNull(41),
-                numFacturacion = values.getOrNull(41) ?: "N/A",
-                paisFiscal = values.getOrNull(35),
-                notas = "",
-                fechaCreacion = Date(),
-                activo = 1
             )
 
+            val partesEsperadas = archivosFactura
+                .map { Utils.extractPartNumber(it.name) }
+                .distinct()
+                .sorted()
 
-            if (logger.isDebugEnabled)
-                logger.info("BT_DETALLE_FACTURA: $entity")
-            if (!facturaRepository.existsByFactura(numFactura, entity.referencia)) {
+            val partesProcesadas = archivosProcesados
+                .filter { it.name.contains(factura.numFactura, ignoreCase = true) }
+                .mapNotNull { Utils.extractPartNumber(it.name) }
+                .distinct()
+                .sorted()
 
-                facturaRepository.save(entity)
+            val partesFaltantes = partesEsperadas - partesProcesadas
+
+            if (partesFaltantes.isEmpty()) {
+                logger.info("Todas las partes de la factura ${factura.numFactura} ya están procesadas.")
+                return@forEach
             } else {
-                if (logger.isDebugEnabled)
-                    logger.info("Factura duplicada: ${entity.numFactura}")
+                logger.info("Faltan partes de la factura ${factura.numFactura}: $partesFaltantes")
             }
-            return true
-        } catch (e: IllegalArgumentException) {
-            logger.error("Error de validación: ${e.message}")
-            false
-        } catch (e: Exception) {
-            logger.error("Error procesando factura: ${e.message}", e)
-            false
-        }
-    }
 
-    fun processCargos(data: List<String>, fileName: String, lineNumber: Int): Boolean {
-        return try {
-            val numFactura = data[0]
-            val operador = data[1]
-            val tipoCargo = data[2]
-            val monto = data[3].toDouble()
+            val totalLineas = calcularTotalLineas(archivosFactura, archivosProcesados, factura.numFactura)
 
-            val idUnique = "$fileName:$lineNumber:$numFactura"
-
-            val cargo = BTDetalleCargos(
-                numFactura = numFactura,
-                operador = operador,
-                tipoCargo = tipoCargo,
-                monto = monto,
-                fechaRegistro = Date(),
-                activo = 1,
-                identificadorUnico = idUnique
-            )
-            // Guardar en la base de datos
-            if (!cargosRepository.existsByIdentificadorUnico(idUnique)) {
-                cargosRepository.save(cargo)
-            }
-            true
-        } catch (e: Exception) {
-            logger.error("Error procesando cargo en archivo $fileName línea $lineNumber: ${data.joinToString("|")}", e)
-            false
-        }
-    }
-
-
-    private fun <T> obtenerOInsertarEnCache(
-        cache: MutableMap<String, T>,
-        descripcion: String,
-        buscarEnBD: (String) -> T?, // Función lambda para buscar en la base de datos
-        insertarEnBD: () -> T       // Función lambda para insertar en la base de datos
-    ): T {
-        return cache[descripcion] ?: synchronized(cache) { // Sincronización específica por caché
-            cache[descripcion] ?: run {
-                val existente = buscarEnBD(descripcion)
-                if (existente != null) {
-                    cache[descripcion] = existente
-                    existente
-                } else {
-                    try {
-                        val nuevaEntidad = insertarEnBD()
-                        cache[descripcion] = nuevaEntidad
-                        nuevaEntidad
-                    } catch (ex: DataIntegrityViolationException) {
-                        // Manejo de violaciones de integridad
-                        if (ex.cause is SQLIntegrityConstraintViolationException) {
-                            logger.warn("Registro '$descripcion' ya existe. Intentando recuperar de la base de datos.")
-                            val recuperado = buscarEnBD(descripcion)
-                            recuperado ?: throw ex // Si no se recupera, lanza la excepción original
-                        } else {
-                            logger.error("Error al insertar '$descripcion': ${ex.message}", ex)
-                            throw ex
-                        }
-                    } catch (ex: Exception) {
-                        logger.error("Error inesperado al manejar '$descripcion': ${ex.message}", ex)
-                        throw ex
-                    }
+            if (totalLineas == factura.cantidadRegistros) {
+                archivosFactura.forEach { archivo ->
+                    moveToProcessed(archivo, processedDirectory)
                 }
+                logger.info("Factura ${factura.numFactura}: Archivos movidos a procesados.")
             }
         }
     }
 
-
-    private fun processCatalog(values: List<String>): Boolean {
-        try {
-            if (values.size < 13) {
-                logger.warn("Invalid record format for BT_DETALLE_LLAMADAS: $values")
-                return false
-            }
-
-            val localidadDescripcion = values.getOrNull(4)?.uppercase() ?: "VACÍO"
-            val modalidadDescripcion = values.getOrNull(11)?.uppercase() ?: return false
-
-            // Obtener o insertar localidad en caché
-            obtenerOInsertarEnCache(
-                cache = localidadesCache,
-                descripcion = localidadDescripcion.ifBlank { "VACÍO" },
-                buscarEnBD = { catPoblacionRepository.findByDescripcion(it) }, // Buscar en base de datos
-                insertarEnBD = {
-                    catPoblacionRepository.save(
-                        CatPoblacion(
-                            descripcion = localidadDescripcion.ifBlank { "VACÍO" },
-                            nivel = 1,
-                            activo = 1,
-                            fechaCreacion = Date()
-                        )
-                    )
-                })
-
-            // Obtener o insertar modalidad en caché
-            obtenerOInsertarEnCache(
-                cache = modalidadesCache,
-                descripcion = modalidadDescripcion.ifBlank { "VACÍO" },
-                buscarEnBD = { catTipoLlamadaRepository.findByDescripcion(it) }, // Buscar en base de datos
-                insertarEnBD = {
-                    catTipoLlamadaRepository.save(
-                        CatTipoLlamada(
-                            descripcion = modalidadDescripcion.ifBlank { "VACÍO" },
-                            nivel = 1,
-                            activo = 1,
-                            fechaCreacion = Date()
-                        )
-                    )
-                })
-            return true
-        } catch (ex: Exception) {
-            logger.error("Error processing record: $values", ex)
-            return false
-        }
-    }
 
     private fun processLLBatchFile(file: File) {
         logger.info("Procesando archivo LL en batch: ${file.name} (${file.length()} bytes)")
-
         val batchSize = 500 // Tamaño del lote
         val allSuccess = AtomicBoolean(true)
 
+        val mapper = jacksonObjectMapper()
+        var lastProcessedLine: Long = 0
+
+        // Leer el progreso guardado
+        val progresoFile = Utils.progresoFile
+        val progresoPrevio: ProgresoProceso? = try {
+            if (progresoFile.exists()) {
+                mapper.readValue<List<ProgresoProceso>>(
+                    progresoFile,
+                    object : TypeReference<List<ProgresoProceso>>() {})
+                    .find { it.archivo == file.name } // Buscar progreso para este archivo
+            } else {
+                null // El archivo no existe
+            }
+        } catch (e: Exception) {
+            logger.warn("Error leyendo archivo de progreso: ${e.message}", e)
+            null // En caso de error, retornar null
+        }
+
+        // Si hay progreso previo, tomar la línea de inicio
+        if (progresoPrevio != null) {
+            lastProcessedLine = progresoPrevio.numeroLinea
+            logger.info("Reiniciando desde la línea ${lastProcessedLine + 1} para la factura ${progresoPrevio.archivo}")
+            if (progresoPrevio.status.equals("COMPLETED", ignoreCase = true)) {
+                return
+            }
+        }
+
+
+        var numFactura = ""
+        var totalLines = 0
+
         try {
             file.bufferedReader().use { reader ->
-                val batch = mutableListOf<BTDetalleLlamadas>() // Acumulador para lotes
+                val batch = mutableListOf<BTDetalleLlamadas>()
                 reader.useLines { lines ->
-                    lines.forEach { line ->
+                    totalLines = lines.count()
+                    lines.drop(lastProcessedLine.toInt()).forEachIndexed { index, line ->
                         try {
                             val values = line.replace("||", "|VACÍO|").split("|")
-                            val entity = crearDetalleLlamadasEntity(values)
-                            if (entity != null) batch.add(entity)
+
+                            val entity = crearDetalleLlamadasEntity(
+                                values,
+                                catalogosService.localidadesCache,
+                                catalogosService.catPoblacionRepository,
+                                catalogosService.modalidadesCache,
+                                catalogosService.catTipoLlamadaRepository
+                            )
+
+                            if (entity != null) {
+                                batch.add(entity)
+                                numFactura = entity.numFactura
+                            }
+
                             // Guardar el lote cuando alcance el tamaño definido
                             if (batch.size >= batchSize) {
-                                guardarLoteLlamadas(batch, file.name) // Guardar el lote actual
-                                batch.clear() // Limpiar el acumulador para el próximo lote
+                                guardarLoteFiltrado(batch, file.name)
+                                batch.clear()
+                                saveProgress(
+                                    ProgresoProceso(
+                                        factura = progresoPrevio?.factura ?: "",
+                                        archivo = file.name,
+                                        "PROGRESS",
+                                        numeroLinea = lastProcessedLine + index + 1,
+                                    )
+                                )
                             }
                         } catch (e: Exception) {
                             allSuccess.set(false)
+                            saveProgress(ProgresoProceso(numFactura, file.name, "ERROR", index.toLong()))
                             logger.error("Error procesando línea: $line", e)
                         }
                     }
+
+                    // Guardar el lote restante
                     if (batch.isNotEmpty()) {
-                        guardarLoteLlamadas(batch, file.name)
+                        guardarLoteFiltrado(batch, file.name)
                     }
                 }
             }
 
-// Mueve el archivo dependiendo del éxito o fallo
             if (allSuccess.get()) {
                 moveToProcessed(file, processedDirectory)
-                markFileAsProcessed(processedFilesFile, file.name)
+                saveProgress(ProgresoProceso(numFactura, file.name, "COMPLETED", totalLines.toLong()))
                 logger.info("Archivo LL procesado exitosamente: ${file.name}")
             } else {
                 moveToProcessed(file, failedDirectory)
@@ -621,132 +264,26 @@ class DirectoryProcessorService(
         }
     }
 
-
-    fun guardarLoteLlamadas(batch: List<BTDetalleLlamadas>, fileName: String) {
-        try {
-            if (batch.isNotEmpty()) {
-                batch.chunked(500).forEach { subBatch ->
-                    llamadasRepository.saveAll(subBatch)
-                }
-            } else {
-                logger.info("No hay registros nuevos para insertar.")
+    //Guardar el batch filtrado
+    private fun guardarLoteFiltrado(batch: List<BTDetalleLlamadas>, fileName: String) {
+        if (batch.isNotEmpty()) {
+            try {
+                transactionalService.guardarLoteLlamadas(batch, fileName)
+                logger.info("Se guardaron ${batch.size} registros del lote actual.")
+            } catch (e: TaskRejectedException) {
+                logger.error("Tarea rechazada para el archivo: $fileName. Reintentando...")
+                // Reintentar después de un retraso (o usar una cola)
+                Thread.sleep(3000)
+                guardarLoteFiltrado(batch, fileName)
             }
-        } catch (ex: DataIntegrityViolationException) {
-            logger.info("El lote ya fue insertado")
-        } catch (e: Exception) {
-            logger.error("Error guardando lote del archivo $fileName: ${e.message}", e)
-            batch.forEach { record ->
-                try {
-                    val existente = llamadasRepository.findByAllFields(
-                        record.numFactura, record.operador, record.numOrigen, record.numDestino,
-                        record.localidad, record.horaLlamada, record.duracion, record.costo,
-                        record.cargoAdicional, record.tipoCargo, record.modalidad, record.clasificacion
-                    )
-                    if (existente == null) {
-                        logger.info("Guardando nuevo registro con numFactura: $record")
-                        llamadasRepository.save(record)
-                    } else {
-                        logger.warn("El registro ya existe. Actualizando si es necesario.")
-                        llamadasRepository.save(existente)
-                    }
-                } catch (ex: ObjectOptimisticLockingFailureException) {
-                    logger.warn("Conflicto detectado. Reintentando...")
-                    try {
-                        val entidadActualizada = llamadasRepository.findById(record.id).orElse(null)
-                        if (entidadActualizada == null) {
-                            logger.error("Entidad no encontrada para ID $record")
-                            return@forEach
-                        }
-                        llamadasRepository.save(entidadActualizada)
-                    } catch (innerEx: Exception) {
-                        logger.error("Error procesando la entidad con ID $record", innerEx)
-                    }
-                } catch (ex: Exception) {
-                    logger.error("Error guardando registro individual: $record", ex)
-                }
-            }
+        } else {
+            logger.info("No hay registros nuevos para guardar.")
         }
     }
 
-
-    private fun crearDetalleLlamadasEntity(values: List<String>): BTDetalleLlamadas? {
-        return try {
-
-            val localidadDescripcion = values.getOrNull(4)?.uppercase() ?: "VACÍO"
-            val modalidadDescripcion = values.getOrNull(11)?.uppercase() ?: "VACÍO"
-
-            val poblacion = obtenerOInsertarEnCache(
-                cache = localidadesCache,
-                descripcion = localidadDescripcion.ifBlank { "VACÍO" },
-                buscarEnBD = { catPoblacionRepository.findByDescripcion(it) },
-                insertarEnBD = {
-                    catPoblacionRepository.save(
-                        CatPoblacion(
-                            descripcion = localidadDescripcion.ifBlank { "VACÍO" },
-                            nivel = 1,
-                            activo = 1,
-                            fechaCreacion = Date()
-                        )
-                    )
-                }
-            )
-
-            val tipoLlamada = obtenerOInsertarEnCache(
-                cache = modalidadesCache,
-                descripcion = modalidadDescripcion.ifBlank { "VACÍO" },
-                buscarEnBD = { catTipoLlamadaRepository.findByDescripcion(it) },
-                insertarEnBD = {
-                    catTipoLlamadaRepository.save(
-                        CatTipoLlamada(
-                            descripcion = modalidadDescripcion.ifBlank { "VACÍO" },
-                            nivel = 1,
-                            activo = 1,
-                            fechaCreacion = Date()
-                        )
-                    )
-                }
-            )
-
-
-            val parsedDate = parseDate(values.getOrNull(5)?.trim())
-            val cost = parseDoubleOrDefault(values.getOrNull(8) ?: "0.0", 0.0, "fileName", "lineNumber")
-
-            BTDetalleLlamadas(
-                numFactura = values[0],
-                operador = values.getOrNull(1),
-                numOrigen = values.getOrNull(2),
-                numDestino = values.getOrNull(3),
-                localidad = poblacion.id.toString(),
-                fechaLlamada = parsedDate,
-                horaLlamada = values.getOrNull(6),
-                duracion = values.getOrNull(7)?.toIntOrNull(),
-                costo = cost,
-                cargoAdicional = values.getOrNull(9)?.toDoubleOrNull(),
-                tipoCargo = values.getOrNull(10),
-                modalidad = tipoLlamada.id.toString(),
-                clasificacion = values.getOrNull(12),
-                fechaCreacion = Date(),
-                activo = 1,
-                idCentroCostos = values.getOrNull(15)?.toIntOrNull()
-            )
-        } catch (e: Exception) {
-            logger.error("Error creando entidad para los valores: $values", e)
-            null
-        }
-    }
 
     fun restoreFiles(): String {
         return try {
-            // Eliminar archivos auxiliares
-            if (statusFile.exists()) {
-                statusFile.delete()
-                logger.info("Archivo 'processing_status.txt' eliminado.")
-            }
-
-            if (processedFilesFile.exists()) {
-                processedFilesFile.delete()
-                logger.info("Archivo 'processed_files.txt' eliminado.")
-            }
             if (processedDirectory.exists()) {
                 moveFilesToRoot(processedDirectory)
                 processedDirectory.deleteRecursively()
@@ -766,38 +303,17 @@ class DirectoryProcessorService(
         }
     }
 
-    private fun moveFilesToRoot(directory: File) {
-        directory.walkTopDown().forEach { file ->
-            if (file.isFile) {
-                val targetFile = File(directory.parentFile, file.name)
-                if (!targetFile.exists()) {
-                    file.copyTo(targetFile, overwrite = true)
-                    logger.info("Archivo restaurado: ${file.name} a la raíz del directorio.")
-                }
-                file.delete()
-            }
-        }
+    @Async
+    fun catalogs(){
+        catalogosService.process(directory,processedDirectory,failedDirectory)
     }
-
-    fun listDirectoryTree(sourceDirectory: String? = ""): String {
-        val directory = if (sourceDirectory.isNullOrEmpty()) {
-            File(mainPath)
-        } else {
-            File(sourceDirectory)
-        }
-
-        if (!directory.exists() || !directory.isDirectory) {
-            throw IllegalArgumentException("El directorio especificado no existe o no es válido: $directory")
-        }
-
-        val builder = StringBuilder()
-        buildTree(directory, builder, "")
-        return builder.toString()
+    @Async
+    fun processCharges(){
+        cargosService.process(directory,processedDirectory,failedDirectory)
     }
-
-    fun unlock(): String {
-        updateStatus("UNLOCK")
-        return "UNLOCK"
+    @Async
+    fun processBills(){
+        facturasService.process(directory,processedDirectory,failedDirectory)
     }
 
 

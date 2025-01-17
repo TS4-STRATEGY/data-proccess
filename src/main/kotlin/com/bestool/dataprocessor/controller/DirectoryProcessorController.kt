@@ -3,6 +3,7 @@ package com.bestool.dataprocessor.controller
 
 import com.bestool.dataprocessor.service.DirectoryProcessorService
 import com.bestool.dataprocessor.utils.Utils.Companion.ensureLogDirectoryExists
+import com.bestool.dataprocessor.utils.Utils.Companion.listDirectoryTree
 import org.springframework.core.io.InputStreamResource
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -21,21 +22,8 @@ class DirectoryProcessorController(private val directoryProcessorService: Direct
 
     @GetMapping("/process-directory")
     fun processDirectory(): String {
-        // Inicia el proceso en segundo plano
         directoryProcessorService.processDirectoryAsync()
-        val status = directoryProcessorService.readOrInitializeStatus()
-        return """{"status": "success", "currentStatus": "$status"}"""
-    }
-
-
-    @GetMapping("/status")
-    fun getStatus(): String {
-        return directoryProcessorService.getStatus()
-    }
-
-    @GetMapping("/unlock")
-    fun unlock(): String {
-        return directoryProcessorService.unlock()
+             return """{"status": "success", "currentStatus": "RUNNING"}"""
     }
 
     @GetMapping("/restore-files")
@@ -95,7 +83,7 @@ class DirectoryProcessorController(private val directoryProcessorService: Direct
     @GetMapping("/tree")
     fun getDirectoryTree(): ResponseEntity<String> {
         return try {
-            val tree = directoryProcessorService.listDirectoryTree()
+            val tree = listDirectoryTree(directoryProcessorService.directory)
             ResponseEntity.ok(tree)
         } catch (e: IllegalArgumentException) {
             ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Error: ${e.message}")
@@ -104,12 +92,33 @@ class DirectoryProcessorController(private val directoryProcessorService: Direct
         }
     }
 
+    @GetMapping("/catalogos")
+    fun getCatalogs(): String {
+        directoryProcessorService.catalogs()
+        return """{"status": "success", "currentStatus": "CATALOGS RUNNING"}"""
+    }
+
+
+    @GetMapping("/facturas")
+    fun getBills(): String {
+        directoryProcessorService.processBills()
+        return """{"status": "success", "currentStatus": "BILLS RUNNING"}"""
+    }
+
+
+    @GetMapping("/cargos")
+    fun getCharges(): String {
+        directoryProcessorService.processCharges()
+        return """{"status": "success", "currentStatus": "CHARGES RUNNING"}"""
+    }
+
+
 
     @GetMapping("/tree-logs")
     fun getDirectoryTreeLogs(): ResponseEntity<String> {
         return try {
             val logDirectory = ensureLogDirectoryExists("/tmp/oracle/apps/bestool/logs/")
-            val tree = directoryProcessorService.listDirectoryTree(logDirectory.path)
+            val tree = listDirectoryTree(logDirectory)
             ResponseEntity.ok(tree)
         } catch (e: IllegalArgumentException) {
             ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Error: ${e.message}")

@@ -19,22 +19,12 @@
 
     <!-- Appender de archivo rotativo -->
     <appender name="ROLLING_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <!-- Archivo actual -->
         <file>${LOG_PATH}/application-rolling.log</file>
-
-        <!-- Configuración de política de rotación -->
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <!-- Nombre del archivo rotado con fecha -->
             <fileNamePattern>${LOG_PATH}/application-rolling.%d{yyyy-MM-dd}.log</fileNamePattern>
-
-            <!-- Mantener logs de los últimos 30 días -->
             <maxHistory>30</maxHistory>
-
-            <!-- Limpiar archivos antiguos al iniciar (opcional) -->
             <cleanHistoryOnStart>true</cleanHistoryOnStart>
         </rollingPolicy>
-
-        <!-- Patrón de formato -->
         <encoder>
             <pattern>%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n</pattern>
         </encoder>
@@ -46,4 +36,10 @@
         <appender-ref ref="FILE" />
         <appender-ref ref="ROLLING_FILE" />
     </root>
+
+    <logger name="org.hibernate.SQL" level="WARN"/>
+    <logger name="org.hibernate.transaction" level="WARN"/>
+    <logger name="org.hibernate.type" level="WARN"/>
+    <logger name="org.springframework.orm.jpa.JpaTransactionManager" level="INFO"/>
+
 </configuration>

@@ -4,44 +4,9 @@ import com.bestool.dataprocessor.entity.BTDetalleLlamadas
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
-import java.util.Date
 
 interface BTDetalleLlamadasRepository : JpaRepository<BTDetalleLlamadas, Long> {
 
-    @Query(
-        """
-        SELECT COUNT(d) > 0 
-        FROM BTDetalleLlamadas d 
-        WHERE d.numFactura = :numFactura 
-          AND d.operador = :operador 
-          AND d.numOrigen = :numOrigen 
-          AND d.numDestino = :numDestino 
-          AND d.localidad = :localidad 
-          AND d.fechaLlamada = :fechaLlamada 
-          AND d.horaLlamada = :horaLlamada 
-          AND d.duracion = :duracion 
-          AND d.costo = :costo 
-          AND d.cargoAdicional = :cargoAdicional 
-          AND d.tipoCargo = :tipoCargo 
-          AND d.modalidad = :modalidad 
-          AND d.clasificacion = :clasificacion
-    """
-    )
-    fun existsByUniqueConstraint(
-        @Param("numFactura") numFactura: String,
-        @Param("operador") operador: String?,
-        @Param("numOrigen") numOrigen: String?,
-        @Param("numDestino") numDestino: String?,
-        @Param("localidad") localidad: String?,
-        @Param("fechaLlamada") fechaLlamada: Date?,
-        @Param("horaLlamada") horaLlamada: String?,
-        @Param("duracion") duracion: Int?,
-        @Param("costo") costo: Double?,
-        @Param("cargoAdicional") cargoAdicional: Double?,
-        @Param("tipoCargo") tipoCargo: String?,
-        @Param("modalidad") modalidad: String?,
-        @Param("clasificacion") clasificacion: String?
-    ): Boolean
 
     @Query(
         "SELECT l FROM BTDetalleLlamadas l WHERE " +
@@ -63,13 +28,52 @@ interface BTDetalleLlamadasRepository : JpaRepository<BTDetalleLlamadas, Long> {
         @Param("operador") operador: String?,
         @Param("numOrigen") numOrigen: String?,
         @Param("numDestino") numDestino: String?,
-        @Param("localidad") localidad: String?,
+        @Param("localidad") localidad: Long,
         @Param("horaLlamada") horaLlamada: String?,
         @Param("duracion") duracion: Int?,
         @Param("costo") costo: Double?,
         @Param("cargoAdicional") cargoAdicional: Double?,
         @Param("tipoCargo") tipoCargo: String?,
-        @Param("modalidad") modalidad: String?,
+        @Param("modalidad") modalidad: Long,
         @Param("clasificacion") clasificacion: String?
     ): BTDetalleLlamadas?
+
+    @Query(
+        value = """
+        SELECT 
+            BDL_NUM_FACTURA, 
+            MAX(BDL_FECHA_CREACION) AS ULTIMA_FECHA, 
+            COUNT(*) AS CANTIDAD_REGISTROS
+        FROM QA_BESTOOLS_OWNER.BT_DETALLE_LLAMADAS
+        GROUP BY BDL_NUM_FACTURA
+        ORDER BY ULTIMA_FECHA DESC
+        """,
+        nativeQuery = true
+    )
+    fun findFacturasWithCountAndLastDate(): List<Map<String, Any>>
+
+
+    @Query(
+        value = """
+            SELECT *
+            FROM (
+                SELECT *
+                FROM QA_BESTOOLS_OWNER.BT_DETALLE_LLAMADAS
+                WHERE BDL_NUM_FACTURA = :numFactura
+                ORDER BY BDL_FECHA_CREACION DESC
+            )
+            WHERE ROWNUM = 1
+        """,
+        nativeQuery = true
+    )
+    fun findLastByFactura(@Param("numFactura") numFactura: String): BTDetalleLlamadas?
+
+    @Query(
+        """
+    SELECT CONCAT(l.numFactura, '|', l.numOrigen, '|', l.fechaLlamada, '|', l.horaLlamada, '|', l.duracion)
+    FROM BTDetalleLlamadas l
+    WHERE CONCAT(l.numFactura, '|', l.numOrigen, '|', l.fechaLlamada, '|', l.horaLlamada, '|', l.duracion) IN :batchKeys
+    """
+    )
+    fun findExistingBatchKeys(@Param("batchKeys") batchKeys: List<String>): List<String>
 }

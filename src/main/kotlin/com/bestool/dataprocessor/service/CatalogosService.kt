@@ -1,13 +1,16 @@
 package com.bestool.dataprocessor.service
 
+import com.bestool.dataprocessor.dto.ProgresoProceso
 import com.bestool.dataprocessor.entity.CatPoblacion
 import com.bestool.dataprocessor.entity.CatTipoLlamada
 import com.bestool.dataprocessor.repository.CatPoblacionRepository
 import com.bestool.dataprocessor.repository.CatTipoLlamadaRepository
 import com.bestool.dataprocessor.utils.UtilCaster
 import com.bestool.dataprocessor.utils.UtilCaster.Companion.obtenerOInsertarEnCache
+import com.bestool.dataprocessor.utils.Utils
 import com.bestool.dataprocessor.utils.Utils.Companion.moveToProcessed
 import com.bestool.dataprocessor.utils.Utils.Companion.removeDuplicates
+import com.bestool.dataprocessor.utils.Utils.Companion.saveProgress
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.io.File
@@ -57,10 +60,21 @@ class CatalogosService(
 
     private fun processLLFile(file: File) {
         logger.info("Procesando catalogos de : ${file.name} (${file.length()} bytes)")
+        var numFactura = ""
         file.bufferedReader().useLines { lines ->
             lines.forEach { line ->
-                processCatalog(line.replace("||", "|VACÍO|").split("|"))
+                val values = line.replace("||", "|VACÍO|").split("|")
+                processCatalog(values)
+                numFactura = values[0].toString()
             }
+            saveProgress(
+                ProgresoProceso(
+                    factura = numFactura,
+                    archivo = file.name,
+                    status = "COUNT",
+                    totalLinesFile = lines.count().toLong()
+                )
+            )
         }
     }
 

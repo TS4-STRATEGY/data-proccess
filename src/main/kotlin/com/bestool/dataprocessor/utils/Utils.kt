@@ -251,33 +251,7 @@ open class Utils {
             }
         }
 
-        fun calcularTotalLineas(
-            archivosFactura: List<File>,
-            archivosProcesados: List<File>,
-            numFactura: String
-        ): Long {
-            val lineasFactura = archivosFactura.sumOf { archivo ->
-                try {
-                    archivo.useLines { it.count() }
-                } catch (e: Exception) {
-                    logger.error("Error leyendo archivo: ${archivo.name} -> ${e.message}")
-                    0
-                }
-            }
 
-            val lineasProcesadas = archivosProcesados
-                .filter { it.name.contains(numFactura, ignoreCase = true) }
-                .sumOf { archivo ->
-                    try {
-                        archivo.useLines { it.count() }
-                    } catch (e: Exception) {
-                        logger.error("Error leyendo archivo procesado: ${archivo.name} -> ${e.message}")
-                        0
-                    }
-                }
-
-            return lineasFactura.toLong() + lineasProcesadas.toLong()
-        }
 
         fun listDirectoryTree(directory: File?): String {
             val builder = StringBuilder()
@@ -291,8 +265,8 @@ open class Utils {
         }
 
 
-        fun saveProgress(progreso: ProgresoProceso) {
-            try {
+        fun saveProgress(progreso: ProgresoProceso): ProgresoProceso? {
+            return try {
                 val mapper = jacksonObjectMapper()
                 val progresoList: MutableList<ProgresoProceso> = if (progresoFile.exists()) {
                     mapper.readValue(progresoFile, object : TypeReference<MutableList<ProgresoProceso>>() {})
@@ -300,26 +274,38 @@ open class Utils {
                     mutableListOf()
                 }
 
+                val updatedProgreso: ProgresoProceso
+
                 // Actualizar o agregar progreso
-                val index = progresoList.indexOfFirst { it.archivo == progreso.archivo }
+                val index = progresoList.indexOfFirst { it.factura == progreso.factura }
                 if (index != -1) {
-                    progresoList[index] = progreso
+                    // Obtener el elemento existente
+                    val existing = progresoList[index]
+
+                    // Crear una copia actualizada solo con los campos modificados (excluyendo factura)
+                    updatedProgreso = existing.copy(
+                        archivo = progreso.archivo.takeIf { !it.isNullOrBlank() } ?: existing.archivo,
+                        status = progreso.status.ifBlank { existing.status },
+                        numeroLinea = progreso.numeroLinea ?: existing.numeroLinea,
+                        totalLinesFile = progreso.totalLinesFile ?: existing.totalLinesFile
+                    )
+                    progresoList[index] = updatedProgreso
                 } else {
+                    // Si no existe, agregarlo a la lista
                     progresoList.add(progreso)
+                    updatedProgreso = progreso
                 }
 
                 mapper.writeValue(progresoFile, progresoList)
-                logger.info("Progreso guardado: $progreso")
+                logger.info("Progreso guardado: $updatedProgreso")
+                updatedProgreso // Retorna el progreso actualizado o añadido
             } catch (e: Exception) {
                 logger.error("Error guardando progreso: ${e.message}")
+                null // Retorna null en caso de error
             }
         }
 
-        // Función para extraer el número de parte del nombre del archivo
-        fun extractPartNumber(fileName: String): Int {
-            val match = Regex("part(\\d+)", RegexOption.IGNORE_CASE).find(fileName)
-            return match?.groups?.get(1)?.value?.toIntOrNull() ?: Int.MAX_VALUE
-        }
+
 
         private fun compararRegistros(a: BTDetalleLlamadas?, b: BTDetalleLlamadas?): Boolean {
             return a != null && b != null &&

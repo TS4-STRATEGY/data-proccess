@@ -6,7 +6,6 @@ import com.bestool.dataprocessor.entity.BTDetalleLlamadas
 import com.bestool.dataprocessor.repository.BTDetalleLlamadasRepository
 import com.bestool.dataprocessor.utils.UtilCaster.Companion.crearDetalleLlamadasEntity
 import com.bestool.dataprocessor.utils.Utils
-import com.bestool.dataprocessor.utils.Utils.Companion.calcularTotalLineas
 import com.bestool.dataprocessor.utils.Utils.Companion.moveFilesToRoot
 import com.bestool.dataprocessor.utils.Utils.Companion.moveToProcessed
 import com.bestool.dataprocessor.utils.Utils.Companion.saveProgress
@@ -115,50 +114,40 @@ class DirectoryProcessorService(
             directorio.any { file -> file.name.contains(factura.numFactura, ignoreCase = true) }
         }
 
-        // Precachea los archivos procesados para evitar múltiples lecturas
-        val archivosProcesados = processedDirectory.listFiles()?.toList() ?: emptyList()
-
         facturas.forEach { factura ->
             val archivosFactura = directorio.filter { file ->
                 file.name.contains(factura.numFactura, ignoreCase = true)
             }
 
-            saveProgress(
+            val progress = saveProgress(
                 ProgresoProceso(
                     factura = factura.numFactura,
-                    archivo = "",
                     status = "DOWNLOAD",
                     numeroLinea = factura.cantidadRegistros
                 )
             )
 
-            val partesEsperadas = archivosFactura
-                .map { Utils.extractPartNumber(it.name) }
-                .distinct()
-                .sorted()
-
-            val partesProcesadas = archivosProcesados
-                .filter { it.name.contains(factura.numFactura, ignoreCase = true) }
-                .mapNotNull { Utils.extractPartNumber(it.name) }
-                .distinct()
-                .sorted()
-
-            val partesFaltantes = partesEsperadas - partesProcesadas
-
-            if (partesFaltantes.isEmpty()) {
-                logger.info("Todas las partes de la factura ${factura.numFactura} ya están procesadas.")
-                return@forEach
-            } else {
-                logger.info("Faltan partes de la factura ${factura.numFactura}: $partesFaltantes")
-            }
-
-            val totalLineas = calcularTotalLineas(archivosFactura, archivosProcesados, factura.numFactura)
-
-            if (totalLineas == factura.cantidadRegistros) {
-                archivosFactura.forEach { archivo ->
-                    moveToProcessed(archivo, processedDirectory)
+            if (progress != null) {
+                if (progress.totalLinesFile == factura.cantidadRegistros) {
+                    archivosFactura.forEach { archivo ->
+                        moveToProcessed(archivo, processedDirectory)
+                    }
+                    logger.info("Factura ${factura.numFactura}: Archivos movidos a procesados.")
+                    saveProgress(
+                        ProgresoProceso(
+                            factura = factura.numFactura,
+                            status = "COMPLETED"
+                        )
+                    )
+                } else {
+                    saveProgress(
+                        ProgresoProceso(
+                            factura = factura.numFactura,
+                            status = "ERROR",
+                            numeroLinea = factura.cantidadRegistros + 1
+                        )
+                    )
                 }
-                logger.info("Factura ${factura.numFactura}: Archivos movidos a procesados.")
             }
         }
     }
@@ -190,7 +179,7 @@ class DirectoryProcessorService(
 
         // Si hay progreso previo, tomar la línea de inicio
         if (progresoPrevio != null) {
-            lastProcessedLine = progresoPrevio.numeroLinea
+            lastProcessedLine = progresoPrevio.numeroLinea ?: 0
             logger.info("Reiniciando desde la línea ${lastProcessedLine + 1} para la factura ${progresoPrevio.archivo}")
             if (progresoPrevio.status.equals("COMPLETED", ignoreCase = true)) {
                 return
@@ -231,14 +220,21 @@ class DirectoryProcessorService(
                                     ProgresoProceso(
                                         factura = progresoPrevio?.factura ?: "",
                                         archivo = file.name,
-                                        "PROGRESS",
+                                        status = "PROGRESS",
                                         numeroLinea = lastProcessedLine + index + 1,
                                     )
                                 )
                             }
                         } catch (e: Exception) {
                             allSuccess.set(false)
-                            saveProgress(ProgresoProceso(numFactura, file.name, "ERROR", index.toLong()))
+                            saveProgress(
+                                ProgresoProceso(
+                                    factura = numFactura,
+                                    archivo = file.name,
+                                    status = "ERROR",
+                                    numeroLinea = index.toLong()
+                                )
+                            )
                             logger.error("Error procesando línea: $line", e)
                         }
                     }
@@ -252,7 +248,14 @@ class DirectoryProcessorService(
 
             if (allSuccess.get()) {
                 moveToProcessed(file, processedDirectory)
-                saveProgress(ProgresoProceso(numFactura, file.name, "COMPLETED", totalLines.toLong()))
+                saveProgress(
+                    ProgresoProceso(
+                        factura = numFactura,
+                        archivo = file.name,
+                        status = "COMPLETED",
+                        totalLinesFile = totalLines.toLong()
+                    )
+                )
                 logger.info("Archivo LL procesado exitosamente: ${file.name}")
             } else {
                 moveToProcessed(file, failedDirectory)
@@ -304,16 +307,18 @@ class DirectoryProcessorService(
     }
 
     @Async
-    fun catalogs(){
-        catalogosService.process(directory,processedDirectory,failedDirectory)
+    fun catalogs() {
+        catalogosService.process(directory, processedDirectory, failedDirectory)
     }
+
     @Async
-    fun processCharges(){
-        cargosService.process(directory,processedDirectory,failedDirectory)
+    fun processCharges() {
+        cargosService.process(directory, processedDirectory, failedDirectory)
     }
+
     @Async
-    fun processBills(){
-        facturasService.process(directory,processedDirectory,failedDirectory)
+    fun processBills() {
+        facturasService.process(directory, processedDirectory, failedDirectory)
     }
 
 

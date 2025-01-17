@@ -195,7 +195,6 @@ class DirectoryProcessorService(
             file.bufferedReader().use { reader ->
                 val batch = mutableListOf<BTDetalleLlamadas>()
                 reader.useLines { lines ->
-
                     lines.drop(lastProcessedLine.toInt()).forEachIndexed { index, line ->
                         try {
                             val values = line.replace("||", "|VACÍO|").split("|")

@@ -273,7 +273,7 @@ class DirectoryProcessorService(
             try {
                 transactionalService.guardarLoteLlamadas(batch, fileName)
                 logger.info("Se guardaron ${batch.size} registros del lote actual.")
-            } catch (e: TaskRejectedException) {
+            } catch (_: TaskRejectedException) {
                 logger.error("Tarea rechazada para el archivo: $fileName. Reintentando...")
                 // Reintentar después de un retraso (o usar una cola)
                 Thread.sleep(3000)

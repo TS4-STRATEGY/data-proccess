@@ -27,7 +27,7 @@ class TransactionalService(
             return
         }
         try {
-            entityManager.merge(batch)
+            llamadasRepository.saveAll(batch)
             logger.info("Lote del archivo $fileName insertado correctamente.")
         } catch (_: DataIntegrityViolationException) {
             logger.warn("Conflicto de integridad en lote $fileName Procesando individualmente...")

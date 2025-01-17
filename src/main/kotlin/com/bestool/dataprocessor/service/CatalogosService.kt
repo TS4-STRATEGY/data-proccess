@@ -61,21 +61,25 @@ class CatalogosService(
     private fun processLLFile(file: File) {
         logger.info("Procesando catalogos de : ${file.name} (${file.length()} bytes)")
         var numFactura = ""
+        var lineCount = 0 // Ahora puedes contar las líneas sin consumir la secuencia
+
         file.bufferedReader().useLines { lines ->
             lines.forEach { line ->
                 val values = line.replace("||", "|VACÍO|").split("|")
                 processCatalog(values)
                 numFactura = values[0].toString()
+                lineCount++
             }
-            saveProgress(
-                ProgresoProceso(
-                    factura = numFactura,
-                    archivo = file.name,
-                    status = "COUNT",
-                    totalLinesFile = lines.count().toLong()
-                )
-            )
         }
+
+        saveProgress(
+            ProgresoProceso(
+                factura = numFactura,
+                archivo = file.name,
+                status = "COUNT",
+                totalLinesFile = lineCount.toLong()
+            )
+        )
     }
 
     fun processCatalog(values: List<String>) {

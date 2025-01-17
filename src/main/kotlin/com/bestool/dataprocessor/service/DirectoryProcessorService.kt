@@ -30,32 +30,34 @@ class DirectoryProcessorService(
     @Value("\${bestools.main-path}") private var mainPath: String
 ) {
     var directory = File(mainPath)
-    private var processedDirectory = File("$mainPath/processed")
-    private var failedDirectory = File("$mainPath/failed")
+    private var processedDirectory = File(mainPath,"/processed")
+    private var failedDirectory = File(mainPath,"/failed")
     private var logger = LoggerFactory.getLogger(DirectoryProcessorService::class.java)
 
 
     @PostConstruct
     fun initializeDirectories() {
         try {
+            // Validar directorio principal
             val directory = File(mainPath)
             if (!directory.exists() || !directory.isDirectory) {
-                logger.error("El directorio no existe o no es válido: $mainPath")
-                return
+                logger.error("El directorio principal no existe o no es válido: $mainPath")
+                throw IllegalStateException("El directorio principal no es válido: $mainPath")
             }
 
-            processedDirectory.apply {
+            // Inicializar processedDirectory
+            processedDirectory = File(directory, "processed").apply {
                 if (!exists()) {
                     mkdirs()
-                    logger.info("Directorio para procesar creado: ${processedDirectory.absolutePath}")
+                    logger.info("Directorio para procesar creado: ${absolutePath}")
                 }
             }
 
-
-            failedDirectory.apply {
-                if (exists()) {
+            // Inicializar failedDirectory
+            failedDirectory = File(directory, "failed").apply {
+                if (!exists()) {
                     mkdirs()
-                    logger.info("Directorio para fallas creado: ${failedDirectory.absolutePath}")
+                    logger.info("Directorio para fallas creado: ${absolutePath}")
                 }
             }
 
@@ -188,13 +190,12 @@ class DirectoryProcessorService(
 
 
         var numFactura = ""
-        var totalLines = 0
 
         try {
             file.bufferedReader().use { reader ->
                 val batch = mutableListOf<BTDetalleLlamadas>()
                 reader.useLines { lines ->
-                    totalLines = lines.count()
+
                     lines.drop(lastProcessedLine.toInt()).forEachIndexed { index, line ->
                         try {
                             val values = line.replace("||", "|VACÍO|").split("|")
@@ -253,7 +254,6 @@ class DirectoryProcessorService(
                         factura = numFactura,
                         archivo = file.name,
                         status = "COMPLETED",
-                        totalLinesFile = totalLines.toLong()
                     )
                 )
                 logger.info("Archivo LL procesado exitosamente: ${file.name}")

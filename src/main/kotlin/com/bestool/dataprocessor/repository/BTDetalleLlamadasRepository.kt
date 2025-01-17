@@ -53,27 +53,4 @@ interface BTDetalleLlamadasRepository : JpaRepository<BTDetalleLlamadas, Long> {
     fun findFacturasWithCountAndLastDate(): List<Map<String, Any>>
 
 
-    @Query(
-        value = """
-            SELECT *
-            FROM (
-                SELECT *
-                FROM QA_BESTOOLS_OWNER.BT_DETALLE_LLAMADAS
-                WHERE BDL_NUM_FACTURA = :numFactura
-                ORDER BY BDL_FECHA_CREACION DESC
-            )
-            WHERE ROWNUM = 1
-        """,
-        nativeQuery = true
-    )
-    fun findLastByFactura(@Param("numFactura") numFactura: String): BTDetalleLlamadas?
-
-    @Query(
-        """
-    SELECT CONCAT(l.numFactura, '|', l.numOrigen, '|', l.fechaLlamada, '|', l.horaLlamada, '|', l.duracion)
-    FROM BTDetalleLlamadas l
-    WHERE CONCAT(l.numFactura, '|', l.numOrigen, '|', l.fechaLlamada, '|', l.horaLlamada, '|', l.duracion) IN :batchKeys
-    """
-    )
-    fun findExistingBatchKeys(@Param("batchKeys") batchKeys: List<String>): List<String>
 }

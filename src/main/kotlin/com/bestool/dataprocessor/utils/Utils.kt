@@ -252,7 +252,6 @@ open class Utils {
         }
 
 
-
         fun listDirectoryTree(directory: File?): String {
             val builder = StringBuilder()
             if (directory != null) {
@@ -283,12 +282,23 @@ open class Utils {
                     val existing = progresoList[index]
 
                     // Crear una copia actualizada solo con los campos modificados (excluyendo factura)
-                    updatedProgreso = existing.copy(
-                        archivo = progreso.archivo.takeIf { !it.isNullOrBlank() } ?: existing.archivo,
-                        status = progreso.status.ifBlank { existing.status },
-                        numeroLinea = progreso.numeroLinea.takeIf { it != null && it > 0 } ?: existing.numeroLinea,
-                        totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 } ?: existing.totalLinesFile
-                    )
+                    if (progreso.status == "PROGRESS") {
+                        updatedProgreso = existing.copy(
+                            archivo = progreso.archivo.takeIf { !it.isNullOrBlank() } ?: existing.archivo,
+                            status = progreso.status.ifBlank { existing.status },
+                            numeroLinea = existing.numeroLinea?.plus(progreso.numeroLinea ?: 0),
+                            totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 } ?: existing.totalLinesFile
+                        )
+                    } else {
+                        updatedProgreso = existing.copy(
+                            archivo = progreso.archivo.takeIf { !it.isNullOrBlank() } ?: existing.archivo,
+                            status = progreso.status.ifBlank { existing.status },
+                            numeroLinea = progreso.numeroLinea.takeIf { it != null && it > 0 } ?: existing.numeroLinea,
+                            totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 }
+                                ?: existing.totalLinesFile
+                        )
+                    }
+
                     progresoList[index] = updatedProgreso
                 } else {
                     // Si no existe, agregarlo a la lista
@@ -304,7 +314,6 @@ open class Utils {
                 null // Retorna null en caso de error
             }
         }
-
 
 
         private fun compararRegistros(a: BTDetalleLlamadas?, b: BTDetalleLlamadas?): Boolean {

@@ -146,7 +146,7 @@ class DirectoryProcessorService(
                         ProgresoProceso(
                             factura = factura.numFactura,
                             status = "ERROR",
-                            numeroLinea = factura.cantidadRegistros + 1
+                            numeroLinea = factura.cantidadRegistros
                         )
                     )
                 }
@@ -214,34 +214,34 @@ class DirectoryProcessorService(
 
                             // Guardar el lote cuando alcance el tamaño definido
                             if (batch.size >= batchSize) {
-                                guardarLoteFiltrado(batch, file.name)
-                                batch.clear()
+                                guardarLoteFiltrado(batch, file.name, numFactura)
                                 saveProgress(
                                     ProgresoProceso(
-                                        factura = progresoPrevio?.factura ?: "",
+                                        factura = numFactura,
                                         archivo = file.name,
                                         status = "PROGRESS",
-                                        numeroLinea = lastProcessedLine + index + 1,
+                                        numeroLinea = batch.size.toLong() ,
                                     )
                                 )
+                                batch.clear()
                             }
                         } catch (e: Exception) {
                             allSuccess.set(false)
-                            saveProgress(
-                                ProgresoProceso(
-                                    factura = numFactura,
-                                    archivo = file.name,
-                                    status = "ERROR",
-                                    numeroLinea = index.toLong()
-                                )
-                            )
                             logger.error("Error procesando línea: $line", e)
                         }
                     }
 
                     // Guardar el lote restante
                     if (batch.isNotEmpty()) {
-                        guardarLoteFiltrado(batch, file.name)
+                        guardarLoteFiltrado(batch, file.name, numFactura)
+                        saveProgress(
+                            ProgresoProceso(
+                                factura = numFactura,
+                                archivo = file.name,
+                                status = "PROGRESS",
+                                numeroLinea = batch.size.toLong() ,
+                            )
+                        )
                     }
                 }
             }
@@ -258,6 +258,13 @@ class DirectoryProcessorService(
                 logger.info("Archivo LL procesado exitosamente: ${file.name}")
             } else {
                 moveToProcessed(file, failedDirectory)
+                saveProgress(
+                    ProgresoProceso(
+                        factura = numFactura,
+                        archivo = file.name,
+                        status = "ERROR"
+                    )
+                )
                 logger.warn("Archivo procesado con errores: ${file.name}")
             }
         } catch (e: Exception) {
@@ -267,10 +274,14 @@ class DirectoryProcessorService(
     }
 
     //Guardar el batch filtrado
-    private fun guardarLoteFiltrado(batch: List<BTDetalleLlamadas>, fileName: String) {
+    private fun guardarLoteFiltrado(
+        batch: List<BTDetalleLlamadas>,
+        fileName: String,
+        numFactura: String
+    ) {
         if (batch.isNotEmpty()) {
             try {
-                transactionalService.guardarLoteLlamadas(batch, fileName)
+                transactionalService.guardarLoteLlamadas(batch, fileName,numFactura)
                 logger.info("Se guardaron ${batch.size} registros del lote actual.")
             } catch (_: TaskRejectedException) {
                 logger.error("Tarea rechazada para el archivo: $fileName. Reintentando...")

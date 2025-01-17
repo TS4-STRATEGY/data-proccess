@@ -275,8 +275,7 @@ class DirectoryProcessorService(
             } catch (_: TaskRejectedException) {
                 logger.error("Tarea rechazada para el archivo: $fileName. Reintentando...")
                 // Reintentar después de un retraso (o usar una cola)
-                Thread.sleep(3000)
-                guardarLoteFiltrado(batch, fileName)
+                Thread.sleep(1000)
             }
         } else {
             logger.info("No hay registros nuevos para guardar.")

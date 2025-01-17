@@ -286,8 +286,8 @@ open class Utils {
                     updatedProgreso = existing.copy(
                         archivo = progreso.archivo.takeIf { !it.isNullOrBlank() } ?: existing.archivo,
                         status = progreso.status.ifBlank { existing.status },
-                        numeroLinea = progreso.numeroLinea ?: existing.numeroLinea,
-                        totalLinesFile = progreso.totalLinesFile ?: existing.totalLinesFile
+                        numeroLinea = progreso.numeroLinea.takeIf { it != null && it > 0 } ?: existing.numeroLinea,
+                        totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 } ?: existing.totalLinesFile
                     )
                     progresoList[index] = updatedProgreso
                 } else {

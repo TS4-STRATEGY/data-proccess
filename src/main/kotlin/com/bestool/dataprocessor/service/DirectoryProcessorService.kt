@@ -22,16 +22,16 @@ import javax.annotation.PostConstruct
 
 @Service
 class DirectoryProcessorService(
-    private val llamadasRepository: BTDetalleLlamadasRepository,
     private val transactionalService: TransactionalService,
     private val catalogosService: CatalogosService,
+    private val llamadasRepository: BTDetalleLlamadasRepository,
     private val cargosService: CargosService,
     private val facturasService: FacturasService,
     @Value("\${bestools.main-path}") private var mainPath: String
 ) {
     var directory = File(mainPath)
-    private var processedDirectory = File(mainPath,"/processed")
-    private var failedDirectory = File(mainPath,"/failed")
+    private var processedDirectory = File(mainPath, "/processed")
+    private var failedDirectory = File(mainPath, "/failed")
     private var logger = LoggerFactory.getLogger(DirectoryProcessorService::class.java)
 
 
@@ -71,7 +71,7 @@ class DirectoryProcessorService(
     @Async
     fun processDirectoryAsync() {
         try {
-            catalogosService.loadCache()
+//            catalogosService.loadCache()
             logger.info("PROCESANDO DETALLE DE LLAMADAS: ")
             val details = directory.walkTopDown()
                 .filter { it.isFile && it.extension.equals("ll", ignoreCase = true) }
@@ -86,10 +86,8 @@ class DirectoryProcessorService(
                         ) 1 else 0
                     } // Luego, los que tienen 'partX' al final
                     .thenBy { it.name })
-
             logger.info("VERIFICANDO INTEGRIDAD: ")
             verificarFacturasConArchivos(details)
-
             details.forEach { file ->
                 try {
                     processLLBatchFile(file) // Cambiamos para usar batch
@@ -105,7 +103,10 @@ class DirectoryProcessorService(
 
     }
 
+
     fun verificarFacturasConArchivos(directorio: List<File>) {
+
+
         val facturas = llamadasRepository.findFacturasWithCountAndLastDate().map {
             FacturaDTO(
                 numFactura = it["BDL_NUM_FACTURA"].toString(),
@@ -116,8 +117,9 @@ class DirectoryProcessorService(
             directorio.any { file -> file.name.contains(factura.numFactura, ignoreCase = true) }
         }
 
+
         facturas.forEach { factura ->
-            val archivosFactura = directorio.filter { file ->
+            val archivo = directorio.firstOrNull { file ->
                 file.name.contains(factura.numFactura, ignoreCase = true)
             }
 
@@ -129,21 +131,24 @@ class DirectoryProcessorService(
                 )
             )
 
-            if (progress != null) {
+            if (progress != null && archivo != null) {
                 if (progress.totalLinesFile == factura.cantidadRegistros) {
-                    archivosFactura.forEach { archivo ->
-                        moveToProcessed(archivo, processedDirectory)
-                    }
+
+                    moveToProcessed(archivo, processedDirectory)
+
                     logger.info("Factura ${factura.numFactura}: Archivos movidos a procesados.")
                     saveProgress(
                         ProgresoProceso(
+                            archivo = archivo.name,
                             factura = factura.numFactura,
                             status = "COMPLETED"
                         )
                     )
                 } else {
+                    moveToProcessed(archivo, failedDirectory)
                     saveProgress(
                         ProgresoProceso(
+                            archivo = archivo.name,
                             factura = factura.numFactura,
                             status = "ERROR",
                             numeroLinea = factura.cantidadRegistros
@@ -152,6 +157,8 @@ class DirectoryProcessorService(
                 }
             }
         }
+
+
     }
 
 
@@ -220,7 +227,7 @@ class DirectoryProcessorService(
                                         factura = numFactura,
                                         archivo = file.name,
                                         status = "PROGRESS",
-                                        numeroLinea = batch.size.toLong() ,
+                                        numeroLinea = batch.size.toLong(),
                                     )
                                 )
                                 batch.clear()
@@ -239,7 +246,7 @@ class DirectoryProcessorService(
                                 factura = numFactura,
                                 archivo = file.name,
                                 status = "PROGRESS",
-                                numeroLinea = batch.size.toLong() ,
+                                numeroLinea = batch.size.toLong(),
                             )
                         )
                     }
@@ -281,7 +288,7 @@ class DirectoryProcessorService(
     ) {
         if (batch.isNotEmpty()) {
             try {
-                transactionalService.guardarLoteLlamadas(batch, fileName,numFactura)
+                transactionalService.guardarLoteLlamadas(batch, fileName, numFactura)
                 logger.info("Se guardaron ${batch.size} registros del lote actual.")
             } catch (_: TaskRejectedException) {
                 logger.error("Tarea rechazada para el archivo: $fileName. Reintentando...")

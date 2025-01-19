@@ -19,7 +19,6 @@ open class Utils {
         private val logger = LoggerFactory.getLogger(Utils::class.java)
         val progresoFile = File("progreso.json")
 
-
         val monthMap = mapOf(
             "Jan" to "01", "Ene" to "01",
             "Feb" to "02",
@@ -226,36 +225,65 @@ open class Utils {
                 val updatedProgreso: ProgresoProceso
 
                 if (progreso.factura.isNullOrBlank()) {
-                    progreso.factura = progreso.archivo?.split("-")?.getOrNull(1) ?: ""
+                    progreso.factura =
+                        (progreso.archivo?.split("-")?.getOrNull(1) + progreso.archivo?.split("-")?.getOrNull(2)
+                            ?.replace(".ll", ""))
                 }
 
                 // Actualizar o agregar progreso
-                val index = progresoList.indexOfFirst { it.archivo == progreso.archivo }
+                val index = progresoList.indexOfFirst {
+                    when (progreso.status) {
+                        "DOWNLOAD" -> {
+                            it.factura == progreso.factura
+                        }
+
+                        else -> {
+                            it.archivo == progreso.archivo
+                        }
+                    }
+                }
                 if (index != -1) {
                     // Obtener el elemento existente
                     val existing = progresoList[index]
 
                     // Crear una copia actualizada solo con los campos modificados (excluyendo factura)
-                    if (progreso.status == "PROGRESS") {
-                        updatedProgreso = existing.copy(
-                            archivo = progreso.factura.takeIf { !it.isNullOrBlank() } ?: existing.factura,
-                            status = progreso.status.ifBlank { existing.status },
-                            numeroLinea = existing.numeroLinea?.plus(progreso.numeroLinea ?: 0),
-                            totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 }
-                                ?: existing.totalLinesFile,
-                            totalLinesInBase = progreso.totalLinesInBase.takeIf { it != null && it > 0 }
-                                ?: existing.totalLinesInBase
-                        )
-                    } else {
-                        updatedProgreso = existing.copy(
-                            archivo = progreso.archivo.takeIf { !it.isNullOrBlank() } ?: existing.archivo,
-                            status = progreso.status.takeIf { !it.isNullOrBlank() } ?: existing.status,
-                            numeroLinea = progreso.numeroLinea.takeIf { it != null && it > 0 } ?: existing.numeroLinea,
-                            totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 }
-                                ?: existing.totalLinesFile,
-                            totalLinesInBase = progreso.totalLinesInBase.takeIf { it != null && it > 0 }
-                                ?: existing.totalLinesInBase
-                        )
+                    when (progreso.status) {
+                        "PROGRESS" -> {
+                            updatedProgreso = existing.copy(
+                                factura = progreso.factura.takeIf { !it.isNullOrBlank() } ?: existing.factura,
+                                status = progreso.status.ifBlank { existing.status },
+                                numeroLinea = existing.numeroLinea?.plus(progreso.numeroLinea ?: 0),
+                                totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 }
+                                    ?: existing.totalLinesFile,
+                                totalLinesInBase = progreso.totalLinesInBase
+                            )
+                        }
+
+                        "DOWNLOAD" -> {
+                            updatedProgreso = existing.copy(
+                                factura = progreso.factura.takeIf { !it.isNullOrBlank() } ?: existing.factura,
+                                status = progreso.status.ifBlank { if (progreso.totalLinesFile == progreso.totalLinesInBase) "COMPLETED" else "ERROR" },
+                                numeroLinea = progreso.numeroLinea.takeIf { it != null && it > 0 }
+                                    ?: existing.numeroLinea,
+                                totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 }
+                                    ?: existing.totalLinesFile,
+                                totalLinesInBase = progreso.totalLinesInBase.takeIf { it != null && it > 0 }
+                                    ?: existing.totalLinesInBase
+                            )
+                        }
+
+                        else -> {
+                            updatedProgreso = existing.copy(
+                                factura = progreso.factura.takeIf { !it.isNullOrBlank() } ?: existing.factura,
+                                status = progreso.status.takeIf { !it.isNullOrBlank() } ?: existing.status,
+                                numeroLinea = progreso.numeroLinea.takeIf { it != null && it > 0 }
+                                    ?: existing.numeroLinea,
+                                totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 }
+                                    ?: existing.totalLinesFile,
+                                totalLinesInBase = progreso.totalLinesInBase.takeIf { it != null && it > 0 }
+                                    ?: existing.totalLinesInBase
+                            )
+                        }
                     }
 
                     progresoList[index] = updatedProgreso

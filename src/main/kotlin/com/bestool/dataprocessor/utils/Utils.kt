@@ -2,13 +2,10 @@ package com.bestool.dataprocessor.utils
 
 
 import com.bestool.dataprocessor.dto.ProgresoProceso
-import com.bestool.dataprocessor.entity.BTDetalleLlamadas
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Value
 import java.io.File
-import java.io.PrintWriter
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.text.ParseException
@@ -179,53 +176,6 @@ open class Utils {
             }
         }
 
-        fun splitFileBySizeAndLines(file: File, maxSizeInMB: Int): List<File> {
-            val maxSizeInBytes = maxSizeInMB * 1024 * 1024 // Convertir MB a bytes
-            val parts = mutableListOf<File>()
-
-            try {
-                var partNumber = 1
-                var currentSize = 0L
-                var currentPart: File? = null
-                var writer: PrintWriter? = null
-
-                file.useLines { lines ->
-                    lines.forEach { line ->
-                        val lineSize = line.toByteArray().size
-
-                        // Crear un nuevo archivo si el tamaño acumulado supera el límite
-                        if (currentSize + lineSize > maxSizeInBytes) {
-                            writer?.close() // Cerrar el archivo anterior
-                            currentPart =
-                                File("${file.parent}/${file.nameWithoutExtension}_part$partNumber.${file.extension}")
-                            writer = PrintWriter(currentPart)
-                            parts.add(currentPart!!)
-                            partNumber++
-                            currentSize = 0L // Reiniciar el tamaño acumulado
-                        }
-
-                        // Escribir la línea en la parte actual
-                        writer?.println(line)
-                        currentSize += lineSize
-                    }
-                }
-                writer?.close() // Asegúrate de cerrar el último archivo
-
-                // Eliminar el archivo original si todas las partes se generaron correctamente
-                if (parts.isNotEmpty()) {
-                    if (file.delete()) {
-                        logger.info("Archivo original eliminado con éxito: ${file.name}")
-                    } else {
-                        logger.error("No se pudo eliminar el archivo original: ${file.name}")
-                    }
-                }
-            } catch (e: Exception) {
-                logger.error("Error durante la partición del archivo: ${e.message}")
-            }
-
-            return parts
-        }
-
 
         fun ensureLogDirectoryExists(logDirectory: String): File {
             val dir = File(logDirectory)
@@ -275,8 +225,12 @@ open class Utils {
 
                 val updatedProgreso: ProgresoProceso
 
+                if (progreso.factura.isNullOrBlank()) {
+                    progreso.factura = progreso.archivo?.split("-")?.getOrNull(1) ?: ""
+                }
+
                 // Actualizar o agregar progreso
-                val index = progresoList.indexOfFirst { it.factura == progreso.factura }
+                val index = progresoList.indexOfFirst { it.archivo == progreso.archivo }
                 if (index != -1) {
                     // Obtener el elemento existente
                     val existing = progresoList[index]
@@ -284,18 +238,23 @@ open class Utils {
                     // Crear una copia actualizada solo con los campos modificados (excluyendo factura)
                     if (progreso.status == "PROGRESS") {
                         updatedProgreso = existing.copy(
-                            archivo = progreso.archivo.takeIf { !it.isNullOrBlank() } ?: existing.archivo,
+                            archivo = progreso.factura.takeIf { !it.isNullOrBlank() } ?: existing.factura,
                             status = progreso.status.ifBlank { existing.status },
                             numeroLinea = existing.numeroLinea?.plus(progreso.numeroLinea ?: 0),
-                            totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 } ?: existing.totalLinesFile
+                            totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 }
+                                ?: existing.totalLinesFile,
+                            totalLinesInBase = progreso.totalLinesInBase.takeIf { it != null && it > 0 }
+                                ?: existing.totalLinesInBase
                         )
                     } else {
                         updatedProgreso = existing.copy(
                             archivo = progreso.archivo.takeIf { !it.isNullOrBlank() } ?: existing.archivo,
-                            status = progreso.status.ifBlank { existing.status },
+                            status = progreso.status.takeIf { !it.isNullOrBlank() } ?: existing.status,
                             numeroLinea = progreso.numeroLinea.takeIf { it != null && it > 0 } ?: existing.numeroLinea,
                             totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 }
-                                ?: existing.totalLinesFile
+                                ?: existing.totalLinesFile,
+                            totalLinesInBase = progreso.totalLinesInBase.takeIf { it != null && it > 0 }
+                                ?: existing.totalLinesInBase
                         )
                     }
 
@@ -315,23 +274,6 @@ open class Utils {
             }
         }
 
-
-        private fun compararRegistros(a: BTDetalleLlamadas?, b: BTDetalleLlamadas?): Boolean {
-            return a != null && b != null &&
-                    a.numFactura == b.numFactura &&
-                    a.operador == b.operador &&
-                    a.numOrigen == b.numOrigen &&
-                    a.numDestino == b.numDestino &&
-                    a.localidad == b.localidad &&
-                    a.fechaLlamada == b.fechaLlamada &&
-                    a.horaLlamada == b.horaLlamada &&
-                    a.duracion == b.duracion &&
-                    a.costo == b.costo &&
-                    a.cargoAdicional == b.cargoAdicional &&
-                    a.tipoCargo == b.tipoCargo &&
-                    a.modalidad == b.modalidad &&
-                    a.clasificacion == b.clasificacion
-        }
 
     }
 

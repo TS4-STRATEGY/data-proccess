@@ -125,7 +125,7 @@ class DirectoryProcessorService(
                 ProgresoProceso(
                     factura = factura.numFactura,
                     status = "DOWNLOAD",
-                    numeroLinea = factura.cantidadRegistros
+                    totalLinesInBase = factura.cantidadRegistros
                 )
             )
 

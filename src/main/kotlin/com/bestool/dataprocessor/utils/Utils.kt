@@ -263,12 +263,10 @@ open class Utils {
                             updatedProgreso = existing.copy(
                                 factura = progreso.factura.takeIf { !it.isNullOrBlank() } ?: existing.factura,
                                 status = progreso.status.ifBlank { if (progreso.totalLinesFile == progreso.totalLinesInBase) "COMPLETED" else "ERROR" },
-                                numeroLinea = progreso.numeroLinea.takeIf { it != null && it > 0 }
-                                    ?: existing.numeroLinea,
+                                numeroLinea = progreso.totalLinesInBase,
                                 totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 }
                                     ?: existing.totalLinesFile,
-                                totalLinesInBase = progreso.totalLinesInBase.takeIf { it != null && it > 0 }
-                                    ?: existing.totalLinesInBase
+                                totalLinesInBase = progreso.totalLinesInBase
                             )
                         }
 

@@ -4,11 +4,11 @@ import javax.persistence.*
 import java.util.*
 
 @Entity
-@Table(name = "BT_CAT_TIPOS_LLAMADAS", schema = "QA_BESTOOLS_OWNER")
+@Table(name = "BT_CAT_TIPOS_LLAMADAS")
 data class CatTipoLlamada(
     @Id
-    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "QA_BESTOOLS_OWNER.SEQ_BT_CAT_TIPOS_LLAMADAS")
-    @SequenceGenerator(name = "QA_BESTOOLS_OWNER.SEQ_BT_CAT_TIPOS_LLAMADAS", sequenceName = "QA_BESTOOLS_OWNER.SEQ_BT_CAT_TIPOS_LLAMADAS", allocationSize = 1)
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "SEQ_BT_CAT_TIPOS_LLAMADAS")
+    @SequenceGenerator(name = "SEQ_BT_CAT_TIPOS_LLAMADAS", sequenceName = "SEQ_BT_CAT_TIPOS_LLAMADAS", allocationSize = 1)
     @Column(name = "BCTL_ID", insertable = false, updatable = false)
     val id: Long = 0,
 

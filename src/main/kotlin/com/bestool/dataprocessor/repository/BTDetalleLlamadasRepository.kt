@@ -44,7 +44,7 @@ interface BTDetalleLlamadasRepository : JpaRepository<BTDetalleLlamadas, Long> {
             BDL_NUM_FACTURA, 
             MAX(BDL_FECHA_CREACION) AS ULTIMA_FECHA, 
             COUNT(*) AS CANTIDAD_REGISTROS
-        FROM QA_BESTOOLS_OWNER.BT_DETALLE_LLAMADAS
+        FROM BT_DETALLE_LLAMADAS
         GROUP BY BDL_NUM_FACTURA
         ORDER BY ULTIMA_FECHA DESC
         """,

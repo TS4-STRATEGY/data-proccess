@@ -262,7 +262,7 @@ open class Utils {
                         "DOWNLOAD" -> {
                             updatedProgreso = existing.copy(
                                 factura = progreso.factura.takeIf { !it.isNullOrBlank() } ?: existing.factura,
-                                status = progreso.status.ifBlank { if (progreso.totalLinesFile == progreso.totalLinesInBase) "COMPLETED" else "ERROR" },
+                                status = if (progreso.totalLinesInBase == existing.totalLinesFile) "COMPLETED" else "ERROR",
                                 numeroLinea = progreso.totalLinesInBase,
                                 totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 }
                                     ?: existing.totalLinesFile,

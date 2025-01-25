@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.task.TaskRejectedException
 import org.springframework.scheduling.annotation.Async
+import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
@@ -33,6 +34,8 @@ class DirectoryProcessorService(
     private var processedDirectory = File(mainPath, "/processed")
     private var failedDirectory = File(mainPath, "/failed")
     private var logger = LoggerFactory.getLogger(DirectoryProcessorService::class.java)
+    @Value("\${scheduler.enabled}")
+    private var isEnabled: Boolean = true
 
 
     @PostConstruct
@@ -69,9 +72,19 @@ class DirectoryProcessorService(
 
 
     @Async
+    @Scheduled(cron = "\${scheduler.cron.expression}")
     fun processDirectoryAsync() {
+
+        if (!isEnabled) {
+            println("Scheduler is disabled")
+            return
+        }
+
         try {
-//            catalogosService.loadCache()
+            catalogosService.process(directory,processedDirectory,failedDirectory)
+            facturasService.process(directory,processedDirectory,failedDirectory)
+            cargosService.process(directory,processedDirectory,failedDirectory)
+            catalogosService.loadCache()
             logger.info("PROCESANDO DETALLE DE LLAMADAS: ")
             val details = directory.walkTopDown()
                 .filter { it.isFile && it.extension.equals("ll", ignoreCase = true) }
@@ -106,15 +119,12 @@ class DirectoryProcessorService(
 
     fun verificarFacturasConArchivos(directorio: List<File>) {
 
-
         val facturas = llamadasRepository.findFacturasWithCountAndLastDate().map {
             FacturaDTO(
                 numFactura = it["BDL_NUM_FACTURA"].toString(),
                 ultimaFecha = it["ULTIMA_FECHA"].toString(),
                 cantidadRegistros = it["CANTIDAD_REGISTROS"].toString().toLong()
             )
-        }.filter { factura ->
-            directorio.any { file -> file.name.contains(factura.numFactura, ignoreCase = true) }
         }
 
 
@@ -157,6 +167,8 @@ class DirectoryProcessorService(
                 }
             }
         }
+
+
 
 
     }

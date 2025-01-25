@@ -27,13 +27,17 @@ repositories {
 }
 
 dependencies {
-    implementation("org.springframework.boot:spring-boot-starter-web:2.6.14")
+    implementation("org.springframework.boot:spring-boot-starter-web:2.6.14") {
+        exclude(group = "org.springframework.boot", module = "spring-boot-starter-tomcat")
+        exclude(group = "org.apache.tomcat.embed", module = "tomcat-embed-websocket")
+        exclude(group = "org.apache.tomcat.embed", module = "tomcat-embed-core")
+        exclude(group = "org.apache.tomcat.embed", module = "tomcat-embed-el")
+    }
     implementation("org.springdoc:springdoc-openapi-ui:1.6.14")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
 
-    implementation("net.lingala.zip4j:zip4j:2.11.5")
 
     implementation("org.springframework.boot:spring-boot-starter-data-jpa:2.6.14")
     implementation("org.hibernate:hibernate-core:5.6.15.Final")

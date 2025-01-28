@@ -1,5 +1,6 @@
 <configuration>
-    <property name="LOG_PATH" value="/u01/oracle/apps/bestool/logs" />
+    <!-- Parametrizar el LOG_PATH según el entorno -->
+    <property name="LOG_PATH" value="${LOG_PATH:-/tmp/logs}" />
 
     <!-- Appender para archivo simple -->
     <appender name="FILE" class="ch.qos.logback.core.FileAppender">
@@ -42,5 +43,4 @@
     <logger name="org.hibernate.transaction" level="ERROR" />
     <logger name="org.hibernate.type" level="ERROR" />
     <logger name="org.springframework.orm.jpa.JpaTransactionManager" level="ERROR" />
-
 </configuration>

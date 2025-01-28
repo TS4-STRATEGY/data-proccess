@@ -18,7 +18,7 @@ class AsyncConfig {
         executor.maxPoolSize = 50
         executor.queueCapacity = 100
         executor.setThreadNamePrefix("AsyncExecutor-")
-        executor.setRejectedExecutionHandler { task, executor ->
+        executor.setRejectedExecutionHandler { task, _ ->
             logger.error("Tarea rechazada: ${task.toString()} debido a la saturación del ejecutor.")
         }
         executor.initialize()

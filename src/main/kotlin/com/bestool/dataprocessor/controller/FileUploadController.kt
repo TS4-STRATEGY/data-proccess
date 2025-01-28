@@ -43,16 +43,8 @@ class FileUploadController(
             required = true
         )
         @RequestPart("file") file: MultipartFile,
-
-        @Parameter(description = "Título del archivo")
-        @RequestPart("title", required = false) title: String?,
-
-        @Parameter(description = "Descripción del archivo")
-        @RequestPart("description", required = false) description: String?
     ): ResponseEntity<String> {
         logger.info("File: ${file.originalFilename}")
-        logger.info("Title: $title")
-        logger.info("Description: $description")
         if (file.isEmpty) {
             return ResponseEntity.badRequest().body("No se recibió un archivo válido en la solicitud")
         }
@@ -85,7 +77,7 @@ class FileUploadController(
         }
     }
 
-    @PostMapping("/upload", consumes = [MediaType.APPLICATION_OCTET_STREAM_VALUE])
+    @PostMapping("/subir", consumes = [MediaType.APPLICATION_OCTET_STREAM_VALUE])
     fun uploadRawFile(
         @RequestHeader("File-Name") fileName: String,
         inputStream: InputStream

@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.domain.EntityScan
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Primary
+import org.springframework.context.annotation.Profile
 import org.springframework.jndi.JndiTemplate
 import org.springframework.orm.hibernate5.HibernateTransactionManager
 import org.springframework.orm.hibernate5.LocalSessionFactoryBean
@@ -17,6 +18,7 @@ import javax.sql.DataSource
 import kotlin.apply
 
 @Configuration
+@Profile("prod", "qa")
 @EntityScan(basePackages = ["com.bestool.dataprocessor.entity"])
 class HibernateConfig {
 

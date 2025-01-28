@@ -4,12 +4,15 @@ package com.bestool.dataprocessor.controller
 import com.bestool.dataprocessor.service.DirectoryProcessorService
 import com.bestool.dataprocessor.utils.Utils.Companion.ensureLogDirectoryExists
 import com.bestool.dataprocessor.utils.Utils.Companion.listDirectoryTree
+import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.media.Schema
 import org.springframework.core.io.InputStreamResource
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.io.FileInputStream
@@ -112,6 +115,46 @@ class DirectoryProcessorController(private val directoryProcessorService: Direct
         return """{"status": "success", "currentStatus": "CHARGES RUNNING"}"""
     }
 
+    @Operation(summary = "Actualizar programación del cron", description = "Actualiza la programación del cron utilizando todos los parámetros.")
+    @PostMapping("/update-schedule")
+    fun updateSchedule(
+        @RequestParam
+        @Schema(description = "Segundos (0-59)", example = "0", minimum = "0", maximum = "59")
+        seconds: Int,
+
+        @RequestParam
+        @Schema(description = "Minutos (0-59)", example = "30", minimum = "0", maximum = "59")
+        minutes: Int,
+
+        @RequestParam
+        @Schema(description = "Horas (0-23)", example = "14", minimum = "0", maximum = "23")
+        hours: Int,
+
+        @RequestParam
+        @Schema(description = "Día del mes (1-31 o '*')", example = "*")
+        dayOfMonth: String,
+
+        @RequestParam
+        @Schema(description = "Mes (1-12 o '*')", example = "*")
+        month: String,
+
+        @RequestParam
+        @Schema(description = "Día de la semana (0-6 o '*', donde 0 = Domingo)", example = "*")
+        dayOfWeek: String
+    ): ResponseEntity<String> {
+        return try {
+            directoryProcessorService.updateCronSchedule(seconds, minutes, hours, dayOfMonth, month, dayOfWeek)
+            ResponseEntity.ok("Programación actualizada: ${directoryProcessorService.getCronExpression()}")
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity.badRequest().body("Error: ${e.message}")
+        }
+    }
+
+    @Operation(summary = "Consultar programación actual", description = "Devuelve la programación actual en un formato legible.")
+    @GetMapping("/current-schedule")
+    fun getCurrentSchedule(): ResponseEntity<String> {
+        return ResponseEntity.ok(directoryProcessorService.getCronExpression())
+    }
 
 
     @GetMapping("/tree-logs")

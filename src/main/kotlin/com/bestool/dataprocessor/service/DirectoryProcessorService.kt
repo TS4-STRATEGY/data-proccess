@@ -71,8 +71,55 @@ class DirectoryProcessorService(
     }
 
 
+    // Expresión cron dinámica (por defecto: una vez al día a las 11 PM)
+    @Volatile
+    private var cronExpression: String = "0 0 23 * * *"
+
+    // Método para actualizar la programación con todos los parámetros
+    fun updateCronSchedule(
+        seconds: Int,
+        minutes: Int,
+        hours: Int,
+        dayOfMonth: String,
+        month: String,
+        dayOfWeek: String
+    ) {
+        require(seconds in 0..59) { "Segundos debe estar entre 0 y 59." }
+        require(minutes in 0..59) { "Minutos debe estar entre 0 y 59." }
+        require(hours in 0..23) { "Horas debe estar entre 0 y 23." }
+        require(dayOfMonth.matches(Regex("\\*|[1-9]|[12][0-9]|3[01]"))) { "Día del mes debe ser un número entre 1 y 31 o '*'." }
+        require(month.matches(Regex("\\*|[1-9]|1[0-2]"))) { "Mes debe ser un número entre 1 y 12 o '*'." }
+        require(dayOfWeek.matches(Regex("\\*|[0-6]"))) { "Día de la semana debe ser un número entre 0 y 6 o '*'." }
+
+        // Construir la expresión cron
+        cronExpression = "$seconds $minutes $hours $dayOfMonth $month $dayOfWeek"
+        logger.info("Nueva programación configurada: $cronExpression")
+    }
+
+    // Obtener la expresión cron en formato legible
+    fun getCronExpression(): String {
+        val parts = cronExpression.split(" ")
+        val seconds = parts[0]
+        val minutes = parts[1]
+        val hours = parts[2]
+        val dayOfMonth = parts[3]
+        val month = parts[4]
+        val dayOfWeek = parts[5]
+
+        return """
+            La tarea está configurada para ejecutarse:
+            - Segundos: $seconds
+            - Minutos: $minutes
+            - Horas: $hours
+            - Días del mes: $dayOfMonth
+            - Meses: $month
+            - Días de la semana: $dayOfWeek
+        """.trimIndent()
+    }
+
+    // Ejecutar la tarea programada
     @Async
-    @Scheduled(cron = "\${scheduler.cron.expression}")
+    @Scheduled(cron = "#{@directoryProcessorService.getCronExpression()}")
     fun processDirectoryAsync() {
 
         if (!isEnabled) {

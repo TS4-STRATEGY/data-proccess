@@ -5,6 +5,7 @@
 
     <context-root>/btpas-dataprocessor</context-root>
 
+
     <resource-description>
         <res-ref-name>jdbc/ASP</res-ref-name>
         <jndi-name>jdbc/ASP</jndi-name>
@@ -12,6 +13,10 @@
 
     <container-descriptor>
         <prefer-web-inf-classes>true</prefer-web-inf-classes>
+        <prefer-application-packages>
+            <package-name>org.apache.commons.*</package-name>
+            <package-name>org.springframework.*</package-name>
+        </prefer-application-packages>
     </container-descriptor>
     <!-- Configuración de roles (opcional) -->
     <security-role-assignment>

@@ -1,5 +1,6 @@
 package com.bestool.dataprocessor.service
 
+import com.bestool.dataprocessor.BuildConfig
 import com.bestool.dataprocessor.dto.FacturaDTO
 import com.bestool.dataprocessor.dto.ProgresoProceso
 import com.bestool.dataprocessor.entity.BTDetalleLlamadas
@@ -28,14 +29,15 @@ class DirectoryProcessorService(
     private val llamadasRepository: BTDetalleLlamadasRepository,
     private val cargosService: CargosService,
     private val facturasService: FacturasService,
-    @Value("\${bestools.main-path}") private var mainPath: String
+
 ) {
+    private var mainPath=BuildConfig.MAIN_PATH
     var directory = File(mainPath)
     private var processedDirectory = File(mainPath, "/processed")
     private var failedDirectory = File(mainPath, "/failed")
     private var logger = LoggerFactory.getLogger(DirectoryProcessorService::class.java)
-    @Value("\${scheduler.enabled}")
-    private var isEnabled: Boolean = true
+
+    private val isEnabled: Boolean = BuildConfig.SCHEDULE_ENABLE
 
 
     @PostConstruct
@@ -52,7 +54,7 @@ class DirectoryProcessorService(
             processedDirectory = File(directory, "processed").apply {
                 if (!exists()) {
                     mkdirs()
-                    logger.info("Directorio para procesar creado: ${absolutePath}")
+                    logger.info("Directorio para procesar creado: $absolutePath")
                 }
             }
 
@@ -60,7 +62,7 @@ class DirectoryProcessorService(
             failedDirectory = File(directory, "failed").apply {
                 if (!exists()) {
                     mkdirs()
-                    logger.info("Directorio para fallas creado: ${absolutePath}")
+                    logger.info("Directorio para fallas creado: $absolutePath")
                 }
             }
 
@@ -280,7 +282,7 @@ class DirectoryProcessorService(
 
                             // Guardar el lote cuando alcance el tamaño definido
                             if (batch.size >= batchSize) {
-                                guardarLoteFiltrado(batch, file.name, numFactura)
+                                guardarLoteFiltrado(batch, file.name)
                                 saveProgress(
                                     ProgresoProceso(
                                         factura = numFactura,
@@ -299,7 +301,7 @@ class DirectoryProcessorService(
 
                     // Guardar el lote restante
                     if (batch.isNotEmpty()) {
-                        guardarLoteFiltrado(batch, file.name, numFactura)
+                        guardarLoteFiltrado(batch, file.name)
                         saveProgress(
                             ProgresoProceso(
                                 factura = numFactura,
@@ -342,12 +344,11 @@ class DirectoryProcessorService(
     //Guardar el batch filtrado
     private fun guardarLoteFiltrado(
         batch: List<BTDetalleLlamadas>,
-        fileName: String,
-        numFactura: String
+        fileName: String
     ) {
         if (batch.isNotEmpty()) {
             try {
-                transactionalService.guardarLoteLlamadas(batch, fileName, numFactura)
+                transactionalService.guardarLoteLlamadas(batch, fileName)
                 logger.info("Se guardaron ${batch.size} registros del lote actual.")
             } catch (_: TaskRejectedException) {
                 logger.error("Tarea rechazada para el archivo: $fileName. Reintentando...")

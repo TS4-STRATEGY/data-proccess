@@ -16,14 +16,11 @@ class TransactionalService(
 
     private val logger = LoggerFactory.getLogger(TransactionalService::class.java)
 
-    @PersistenceContext
-    private lateinit var entityManager: EntityManager
 
     @Transactional
     fun guardarLoteLlamadas(
         batch: List<BTDetalleLlamadas>,
         fileName: String,
-        numFactura: String,
     ) {
         if (batch.isEmpty()) {
             logger.info("No hay registros nuevos para insertar.")

@@ -1,31 +1,25 @@
 package com.bestool.dataprocessor.controller
 
-import com.bestool.dataprocessor.dto.FormWrapper
+import com.bestool.dataprocessor.BuildConfig
 import com.bestool.dataprocessor.service.DirectoryProcessorService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
-import io.swagger.v3.oas.annotations.media.Content
-import io.swagger.v3.oas.annotations.media.Schema
-import io.swagger.v3.oas.annotations.media.SchemaProperty
-import io.swagger.v3.oas.annotations.parameters.RequestBody
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
-import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
-import org.springframework.web.bind.annotation.*
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestPart
+import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.multipart.MultipartFile
 import java.io.File
 import java.io.IOException
-import java.io.InputStream
 
 @RestController
 class FileUploadController(
-    @Value("\${bestools.main-path}") private val mainPath: String
 ) {
-
+    private val mainPath = BuildConfig.MAIN_PATH
     private var logger = LoggerFactory.getLogger(DirectoryProcessorService::class.java)
 
     @PostMapping("/upload", consumes = ["multipart/form-data"])
@@ -75,16 +69,6 @@ class FileUploadController(
             ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body("Error inesperado: ${e.message}")
         }
-    }
-
-    @PostMapping("/subir", consumes = [MediaType.APPLICATION_OCTET_STREAM_VALUE])
-    fun uploadRawFile(
-        @RequestHeader("File-Name") fileName: String,
-        inputStream: InputStream
-    ): ResponseEntity<String> {
-        val file = File("/path/to/upload/directory/$fileName")
-        file.outputStream().use { output -> inputStream.copyTo(output) }
-        return ResponseEntity.ok("Archivo subido: ${file.absolutePath}")
     }
 
 }

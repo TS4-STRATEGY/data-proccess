@@ -14,13 +14,12 @@
     <!-- Configuración para manejar anotaciones en Spring MVC -->
     <mvc:annotation-driven />
 
-    <!-- Configuración del resolver de vistas -->
+    <!-- Configuración del resolver de vistas (solo si usas JSP) -->
     <bean class="org.springframework.web.servlet.view.InternalResourceViewResolver">
         <property name="prefix" value="/WEB-INF/views/" />
         <property name="suffix" value=".jsp" />
     </bean>
 
     <!-- Configuración para recursos estáticos -->
-    <mvc:resources mapping="/resources/**" location="/resources/" />
-
+    <mvc:resources mapping="/resources/**" location="classpath:/static/, classpath:/public/, /resources/" />
 </beans>

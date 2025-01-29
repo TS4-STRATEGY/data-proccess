@@ -14,6 +14,64 @@ version = "0.0.1"
 val env: String = project.findProperty("env")?.toString() ?: "local"
 println("Building for environment: $env")
 
+tasks.register("generateBuildConfig") {
+    val outputDir = file("src/main/kotlin/com/bestool/dataprocessor")
+    doLast {
+        val buildConfigFile = file("$outputDir/BuildConfig.kt")
+        buildConfigFile.parentFile.mkdirs()
+
+        val mainPath = when (env) {
+            "dev" -> "${System.getProperty("user.home")}/Downloads/DATA"
+            "qa" -> "/u01/ArchivosBestools"
+            "prod" -> "/u01/oracle/ArchivosBestools"
+            else -> "/tmp/oracle/apps/bestool"
+        }
+
+
+
+        buildConfigFile.writeText(
+            """
+            package com.bestool.dataprocessor
+
+            object BuildConfig {
+                const val ACTIVE_PROFILE = "$env"
+                const val MAIN_PATH = "$mainPath"
+                const val SCHEDULE_ENABLE = true
+            }
+            """.trimIndent()
+        )
+
+        println("✅ BuildConfig.kt generado en: ${buildConfigFile.absolutePath}")
+    }
+}
+
+// Agregar la carpeta generada al compilador de Kotlin
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
+    dependsOn("generateBuildConfig")
+    kotlinOptions {
+        freeCompilerArgs = listOf("-Xjsr305=strict")
+    }
+}
+
+// Asegurar que el código generado se incluya en el classpath
+tasks.register("setupSourceSet") {
+    doLast {
+        val generatedSrc = "$buildDir/generated/sources/buildConfig/kotlin"
+        println("📂 Agregando ruta de fuentes: $generatedSrc")
+        project.extensions.extraProperties["generatedSrc"] = generatedSrc
+    }
+}
+
+// Incluir el código generado en `sourceSets`
+tasks.withType<JavaCompile> {
+    dependsOn("setupSourceSet")
+    doFirst {
+        val generatedSrc = project.extensions.extraProperties["generatedSrc"] as String
+        options.compilerArgs.add("-sourcepath")
+        options.compilerArgs.add(generatedSrc)
+    }
+}
+
 
 java {
     toolchain {
@@ -31,10 +89,12 @@ repositories {
     mavenCentral()
 }
 
+
+
 dependencies {
 
-    if (env == "qa" || env == "prod") {
-        implementation("org.springframework.boot:spring-boot-starter-web:2.6.14") {
+    implementation("org.springframework.boot:spring-boot-starter-web:2.6.14") {
+        if (env == "qa" || env == "prod") {
             exclude(group = "org.springframework.boot", module = "spring-boot-starter-tomcat")
             exclude(group = "org.apache.tomcat.embed", module = "tomcat-embed-websocket")
             exclude(group = "org.apache.tomcat.embed", module = "tomcat-embed-core")
@@ -42,10 +102,6 @@ dependencies {
         }
     }
 
-    // Dependencias específicas para Local
-    if (env == "local") {
-        implementation("org.springframework.boot:spring-boot-starter-web:2.6.14")
-    }
     implementation("org.springdoc:springdoc-openapi-ui:1.6.14")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
@@ -77,10 +133,41 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
 
 // Configuración dinámica del nombre del WAR
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootWar>("bootWar") {
-    archiveFileName.set("${project.name}-$env-$archiveVersion.war")
+    archiveFileName.set("${project.name}-$env-${project.version}.war")
 }
 
 // Pasar el perfil de Spring Boot según el entorno
 tasks.named<JavaExec>("bootRun") {
     systemProperty("spring.profiles.active", env)
 }
+
+tasks.withType<ProcessResources> {
+    filteringCharset = "UTF-8"
+    inputs.property("env", env)
+    inputs.property("user.home", System.getProperty("user.home"))
+    val logPath = when (env) {
+        "dev" -> "/tmp/oracle/apps/bestool"
+        "qa" -> "/u01/oracle/apps/bestool"
+        "prod" -> "/u01/oracle/apps/bestool"
+        else -> "/var/log/bestool"
+    }
+    inputs.property("path", logPath)
+    filesMatching("application.properties") {
+        expand(
+            "env" to env,
+            "path" to logPath,
+            "user.home" to System.getProperty("user.home")
+        )
+    }
+    filesMatching("WEB-INF/web.xml") {
+        expand("springProfile" to env)
+    }
+}
+
+tasks.named<org.springframework.boot.gradle.tasks.bundling.BootWar>("bootWar") {
+    from("src/main/webapp") {
+        include("web.xml") // Incluye el archivo expandido
+        into("WEB-INF") // Asegura que vaya en la ruta correcta dentro del WAR
+    }
+}
+

@@ -5,8 +5,6 @@ import com.bestool.dataprocessor.repository.BTDetalleLlamadasRepository
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
-import javax.persistence.EntityManager
-import javax.persistence.PersistenceContext
 import javax.transaction.Transactional
 
 @Service

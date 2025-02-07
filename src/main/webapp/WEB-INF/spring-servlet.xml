@@ -22,4 +22,13 @@
 
     <!-- Configuración para recursos estáticos -->
     <mvc:resources mapping="/resources/**" location="classpath:/static/, classpath:/public/, /resources/" />
+
+    <bean id="multipartResolver" class="org.springframework.web.multipart.commons.CommonsMultipartResolver">
+        <property name="maxUploadSize" value="3221225472" /> <!-- 3 GB -->
+        <property name="maxInMemorySize" value="1048576" /> <!-- 1 MB -->
+        <property name="defaultEncoding" value="utf-8" />
+        <property name="preserveFilename" value="true"/>
+        <property name="maxUploadSizePerFile" value="3221225472" /> <!-- 1 hora en milisegundos -->
+    </bean>
+
 </beans>

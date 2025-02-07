@@ -13,8 +13,8 @@ class SwaggerConfig {
         return OpenAPI()
             .info(
                 Info()
-                    .title("btpas-centros-costos-ms API")
-                    .description("API for managing cost centers")
+                    .title("Procesador de Datos API")
+                    .description("API for managing data process")
                     .version("1.0")
             )
     }

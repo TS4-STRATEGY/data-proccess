@@ -5,19 +5,16 @@
 
     <context-root>/btpas-dataprocessor</context-root>
 
+    <container-descriptor>
+        <prefer-web-inf-classes>true</prefer-web-inf-classes>
+        <servlet-reload-check-secs>1</servlet-reload-check-secs>
+    </container-descriptor>
 
     <resource-description>
         <res-ref-name>jdbc/ASP</res-ref-name>
         <jndi-name>jdbc/ASP</jndi-name>
     </resource-description>
 
-    <container-descriptor>
-        <prefer-web-inf-classes>true</prefer-web-inf-classes>
-        <prefer-application-packages>
-            <package-name>org.apache.commons.*</package-name>
-            <package-name>org.springframework.*</package-name>
-        </prefer-application-packages>
-    </container-descriptor>
     <!-- Configuración de roles (opcional) -->
     <security-role-assignment>
         <role-name>admin</role-name>

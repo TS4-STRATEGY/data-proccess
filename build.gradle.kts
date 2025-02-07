@@ -27,6 +27,13 @@ tasks.register("generateBuildConfig") {
             else -> "/tmp/oracle/apps/bestool"
         }
 
+        val logPath = when (env) {
+            "dev" -> "/tmp/oracle/apps/bestool"
+            "qa" -> "/u01/oracle/apps/bestool"
+            "prod" -> "/u01/oracle/apps/bestool"
+            else -> "/var/log/bestool"
+        }
+
 
 
         buildConfigFile.writeText(
@@ -37,6 +44,7 @@ tasks.register("generateBuildConfig") {
                 const val ACTIVE_PROFILE = "$env"
                 const val MAIN_PATH = "$mainPath"
                 const val SCHEDULE_ENABLE = true
+                const val LOG_PATH = "$logPath"
             }
             """.trimIndent()
         )
@@ -145,17 +153,9 @@ tasks.withType<ProcessResources> {
     filteringCharset = "UTF-8"
     inputs.property("env", env)
     inputs.property("user.home", System.getProperty("user.home"))
-    val logPath = when (env) {
-        "dev" -> "/tmp/oracle/apps/bestool"
-        "qa" -> "/u01/oracle/apps/bestool"
-        "prod" -> "/u01/oracle/apps/bestool"
-        else -> "/var/log/bestool"
-    }
-    inputs.property("path", logPath)
     filesMatching("application.properties") {
         expand(
             "env" to env,
-            "path" to logPath,
             "user.home" to System.getProperty("user.home")
         )
     }

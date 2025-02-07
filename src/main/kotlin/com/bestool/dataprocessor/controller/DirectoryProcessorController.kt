@@ -1,6 +1,7 @@
 package com.bestool.dataprocessor.controller
 
 
+import com.bestool.dataprocessor.BuildConfig
 import com.bestool.dataprocessor.service.DirectoryProcessorService
 import com.bestool.dataprocessor.utils.Utils.Companion.ensureLogDirectoryExists
 import com.bestool.dataprocessor.utils.Utils.Companion.listDirectoryTree
@@ -45,7 +46,7 @@ class DirectoryProcessorController(private val directoryProcessorService: Direct
     @GetMapping("/last-error")
     fun getLastError(@RequestParam(required = false) lines: Int?): ResponseEntity<*> {
         return try {
-            val logDirectory = ensureLogDirectoryExists("/tmp/oracle/apps/bestool/logs/")
+            val logDirectory = ensureLogDirectoryExists(BuildConfig.LOG_PATH)
             if (logDirectory.exists() && logDirectory.isDirectory) {
                 val lastModifiedFile = logDirectory.listFiles { file ->
                     file.isFile && file.name.startsWith("application.") // Filtra solo los logs relevantes
@@ -160,7 +161,7 @@ class DirectoryProcessorController(private val directoryProcessorService: Direct
     @GetMapping("/tree-logs")
     fun getDirectoryTreeLogs(): ResponseEntity<String> {
         return try {
-            val logDirectory = ensureLogDirectoryExists("/tmp/oracle/apps/bestool/logs/")
+            val logDirectory = ensureLogDirectoryExists(BuildConfig.LOG_PATH)
             val tree = listDirectoryTree(logDirectory)
             ResponseEntity.ok(tree)
         } catch (e: IllegalArgumentException) {

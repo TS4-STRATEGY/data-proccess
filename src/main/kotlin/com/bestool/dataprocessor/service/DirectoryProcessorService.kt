@@ -123,6 +123,8 @@ class DirectoryProcessorService(
     @Scheduled(cron = "#{@directoryProcessorService.getCronExpression()}")
     fun processDirectoryAsync() {
 
+        initializeDirectories()
+
         if (!isEnabled) {
             println("Scheduler is disabled")
             return

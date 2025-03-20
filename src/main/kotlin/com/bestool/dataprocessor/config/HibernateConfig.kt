@@ -74,7 +74,10 @@ class HibernateConfig {
             put("hibernate.dialect", "org.hibernate.dialect.OracleDialect")
             put("hibernate.show_sql", true)
             put("hibernate.format_sql", true)
-            put("hibernate.hbm2ddl.auto", "none") // Ajusta según tu necesidad (validate, update, create-drop)
+            put("hibernate.hbm2ddl.auto", "validate") // Ajusta según tu necesidad (validate, update, create-drop)
+            put("hibernate.id.new_generator_mappings", true)
+            put("hibernate.id.optimizer.pooled", true)
+            put("hibernate.id.sequence_increment_size", "100")
         }
     }
 }

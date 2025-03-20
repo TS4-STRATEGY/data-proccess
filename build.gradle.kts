@@ -28,10 +28,10 @@ tasks.register("generateBuildConfig") {
         }
 
         val logPath = when (env) {
-            "dev" -> "/tmp/oracle/apps/bestool"
-            "qa" -> "/u01/oracle/apps/bestool"
-            "prod" -> "/u01/oracle/apps/bestool"
-            else -> "/var/log/bestool"
+            "dev" -> "/tmp/oracle/apps/bestool/logs/"
+            "qa" -> "/u01/oracle/apps/bestool/logs/"
+            "prod" -> "/u01/oracle/apps/bestool/logs/"
+            else -> "/var/log/bestool/logs/"
         }
 
 
@@ -49,7 +49,7 @@ tasks.register("generateBuildConfig") {
             """.trimIndent()
         )
 
-        println("✅ BuildConfig.kt generado en: ${buildConfigFile.absolutePath}")
+        println(" BuildConfig.kt generado en: ${buildConfigFile.absolutePath}")
     }
 }
 

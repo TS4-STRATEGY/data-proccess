@@ -3,12 +3,7 @@
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xsi:schemaLocation="http://xmlns.oracle.com/weblogic/weblogic-web-app https://xmlns.oracle.com/weblogic/weblogic-web-app/1.0/weblogic-web-app.xsd">
 
-    <context-root>/btpas-dataprocessor</context-root>
-
-    <container-descriptor>
-        <prefer-web-inf-classes>true</prefer-web-inf-classes>
-        <servlet-reload-check-secs>1</servlet-reload-check-secs>
-    </container-descriptor>
+    <context-root>/btpas-data-collector</context-root>
 
     <resource-description>
         <res-ref-name>jdbc/ASP</res-ref-name>
@@ -20,6 +15,5 @@
         <role-name>admin</role-name>
         <principal-name>weblogic</principal-name>
     </security-role-assignment>
-
 
 </weblogic-web-app>

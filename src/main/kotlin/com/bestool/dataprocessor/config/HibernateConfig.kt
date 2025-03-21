@@ -49,7 +49,6 @@ class HibernateConfig {
         val vendorAdapter = HibernateJpaVendorAdapter()
         em.jpaVendorAdapter = vendorAdapter
         em.setJpaProperties(hibernateProperties())
-
         return em
     }
 
@@ -78,6 +77,14 @@ class HibernateConfig {
             put("hibernate.id.new_generator_mappings", true)
             put("hibernate.id.optimizer.pooled", true)
             put("hibernate.id.sequence_increment_size", "100")
+
+            //spring.jpa.properties.hibernate.jdbc.batch_size=500
+            //spring.jpa.properties.hibernate.order_inserts=true
+            //spring.jpa.properties.hibernate.order_updates=true
+            //spring.jpa.properties.hibernate.id.new_generator_mappings=true
+            //spring.jpa.properties.hibernate.id.optimizer.pooled=true
+            //spring.jpa.properties.hibernate.id.sequence_increment_size=100
+            //spring.jpa.properties.hibernate.generate_statistics=false
         }
     }
 }

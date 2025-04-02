@@ -12,7 +12,7 @@
 
     <!-- Appender de archivo rotativo -->
     <appender name="ROLLING_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_PATH}/application-rolling.log</file>
+        <file>${LOG_PATH}/data-collector-rolling.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <fileNamePattern>${LOG_PATH}/data-collector-rolling.%d{yyyy-MM-dd}.log</fileNamePattern>
             <maxHistory>30</maxHistory>
@@ -24,7 +24,7 @@
     </appender>
 
     <!-- Nivel global de logs -->
-    <root level="info">
+    <root level="ERROR">
         <appender-ref ref="CONSOLE" />
         <appender-ref ref="ROLLING_FILE" />
     </root>

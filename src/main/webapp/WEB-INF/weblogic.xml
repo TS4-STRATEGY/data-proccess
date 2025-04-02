@@ -6,8 +6,8 @@
     <context-root>/btpas-data-collector</context-root>
 
     <resource-description>
-        <res-ref-name>jdbc/ASP</res-ref-name>
-        <jndi-name>jdbc/ASP</jndi-name>
+        <res-ref-name>jdbc/USP</res-ref-name>
+        <jndi-name>jdbc/USP</jndi-name>
     </resource-description>
 
     <!-- Configuración de roles (opcional) -->

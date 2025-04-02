@@ -30,6 +30,12 @@ class DirectoryProcessorController(private val directoryProcessorService: Direct
              return """{"status": "success", "currentStatus": "RUNNING"}"""
     }
 
+    @GetMapping("/directory-status")
+    fun getDirectoryStatus(): ResponseEntity<Map<String, Int>> {
+        val status = directoryProcessorService.getDirectoryStatus()
+        return ResponseEntity.ok(status)
+    }
+
     @GetMapping("/restore-files")
     fun restoreFiles(): ResponseEntity<String> {
         return try {

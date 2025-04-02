@@ -4,8 +4,8 @@
          version="2.5">
     <display-name>btpas-data-collector</display-name>
     <resource-ref>
-        <description>Base de datos de ASP</description>
-        <res-ref-name>jdbc/ASP</res-ref-name>
+        <description>Base de datos de USP</description>
+        <res-ref-name>jdbc/USP</res-ref-name>
         <res-type>javax.sql.DataSource</res-type>
         <res-auth>Container</res-auth>
     </resource-ref>

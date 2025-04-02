@@ -5,6 +5,7 @@ import com.bestool.dataprocessor.entity.CatPoblacion
 import com.bestool.dataprocessor.entity.CatTipoLlamada
 import com.bestool.dataprocessor.repository.CatPoblacionRepository
 import com.bestool.dataprocessor.repository.CatTipoLlamadaRepository
+import com.bestool.dataprocessor.repository.RegistroFacturaRepository
 import com.bestool.dataprocessor.utils.UtilCaster.Companion.obtenerOInsertarEnCache
 import com.bestool.dataprocessor.utils.Utils.Companion.moveToProcessed
 import com.bestool.dataprocessor.utils.Utils.Companion.removeDuplicates
@@ -18,7 +19,8 @@ import java.util.concurrent.ConcurrentHashMap
 @Service
 class CatalogosService(
     val catPoblacionRepository: CatPoblacionRepository,
-    val catTipoLlamadaRepository: CatTipoLlamadaRepository
+    val catTipoLlamadaRepository: CatTipoLlamadaRepository,
+    val registroFacturaRepository: RegistroFacturaRepository
 ) {
     private val logger = LoggerFactory.getLogger(CatalogosService::class.java)
     var localidadesCache = ConcurrentHashMap<String, CatPoblacion>()
@@ -77,7 +79,7 @@ class CatalogosService(
                 archivo = file.name,
                 status = "COUNT",
                 totalLinesFile = lineCount.toLong()
-            )
+            ),registroFacturaRepository
         )
     }
 

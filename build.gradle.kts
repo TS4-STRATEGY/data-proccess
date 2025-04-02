@@ -111,17 +111,18 @@ dependencies {
     }
 
     implementation("org.springdoc:springdoc-openapi-ui:1.6.14")
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.13.4")
+    implementation("com.fasterxml.jackson.core:jackson-core:2.13.4")
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.4")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
 
-    implementation("org.springframework.boot:spring-boot-starter-data-jpa:2.6.14")
+    implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.hibernate:hibernate-core:5.6.15.Final")
     implementation("com.oracle.database.jdbc:ojdbc8")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.4")
     implementation("ch.qos.logback:logback-classic:1.2.3")
-    implementation("commons-fileupload:commons-fileupload:1.5")
     implementation("org.springframework.boot:spring-boot-starter-batch:2.6.14")
     implementation("org.springframework.boot:spring-boot-starter-actuator:2.6.14")
 
@@ -144,30 +145,4 @@ tasks.named<org.springframework.boot.gradle.tasks.bundling.BootWar>("bootWar") {
     archiveFileName.set("${project.name}-$env-${project.version}.war")
 }
 
-// Pasar el perfil de Spring Boot según el entorno
-tasks.named<JavaExec>("bootRun") {
-    systemProperty("spring.profiles.active", env)
-}
-
-tasks.withType<ProcessResources> {
-    filteringCharset = "UTF-8"
-    inputs.property("env", env)
-    inputs.property("user.home", System.getProperty("user.home"))
-    filesMatching("application.properties") {
-        expand(
-            "env" to env,
-            "user.home" to System.getProperty("user.home")
-        )
-    }
-    filesMatching("WEB-INF/web.xml") {
-        expand("springProfile" to env)
-    }
-}
-
-tasks.named<org.springframework.boot.gradle.tasks.bundling.BootWar>("bootWar") {
-    from("src/main/webapp") {
-        include("web.xml") // Incluye el archivo expandido
-        into("WEB-INF") // Asegura que vaya en la ruta correcta dentro del WAR
-    }
-}
 

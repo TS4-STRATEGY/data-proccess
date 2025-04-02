@@ -4,7 +4,9 @@ import com.bestool.dataprocessor.BuildConfig
 import com.bestool.dataprocessor.dto.FacturaDTO
 import com.bestool.dataprocessor.dto.ProgresoProceso
 import com.bestool.dataprocessor.entity.BTDetalleLlamadas
+import com.bestool.dataprocessor.entity.RegistroFactura
 import com.bestool.dataprocessor.repository.BTDetalleLlamadasRepository
+import com.bestool.dataprocessor.repository.RegistroFacturaRepository
 import com.bestool.dataprocessor.utils.UtilCaster.Companion.crearDetalleLlamadasEntity
 import com.bestool.dataprocessor.utils.Utils
 import com.bestool.dataprocessor.utils.Utils.Companion.moveFilesToRoot
@@ -26,11 +28,12 @@ class DirectoryProcessorService(
     private val transactionalService: TransactionalService,
     private val catalogosService: CatalogosService,
     private val llamadasRepository: BTDetalleLlamadasRepository,
+    private val registroFacturaRepository: RegistroFacturaRepository,
     private val cargosService: CargosService,
     private val facturasService: FacturasService,
 
-) {
-    private var mainPath=BuildConfig.MAIN_PATH
+    ) {
+    private var mainPath = BuildConfig.MAIN_PATH
     var directory = File(mainPath)
     private var processedDirectory = File(mainPath, "/processed")
     private var failedDirectory = File(mainPath, "/failed")
@@ -45,8 +48,8 @@ class DirectoryProcessorService(
             // Validar directorio principal
             val directory = File(mainPath)
             if (!directory.exists() || !directory.isDirectory) {
-                logger.error("El directorio principal no existe o no es válido: $mainPath")
-                throw IllegalStateException("El directorio principal no es válido: $mainPath")
+                directory.mkdirs()
+                logger.info("El directorio principal no existe o no es válido, pero ha sido creado: $mainPath")
             }
 
             // Inicializar processedDirectory
@@ -122,18 +125,15 @@ class DirectoryProcessorService(
     @Async
     @Scheduled(cron = "#{@directoryProcessorService.getCronExpression()}")
     fun processDirectoryAsync() {
-
-        initializeDirectories()
-
         if (!isEnabled) {
-            println("Scheduler is disabled")
+            logger.info("Scheduler is disabled")
             return
         }
-
+        initializeDirectories()
         try {
-            catalogosService.process(directory,processedDirectory,failedDirectory)
-            facturasService.process(directory,processedDirectory,failedDirectory)
-            cargosService.process(directory,processedDirectory,failedDirectory)
+            catalogosService.process(directory, processedDirectory, failedDirectory)
+            facturasService.process(directory, processedDirectory, failedDirectory)
+            cargosService.process(directory, processedDirectory, failedDirectory)
             catalogosService.loadCache()
             logger.info("PROCESANDO DETALLE DE LLAMADAS: ")
             val details = directory.walkTopDown()
@@ -188,7 +188,7 @@ class DirectoryProcessorService(
                     factura = factura.numFactura,
                     status = "DOWNLOAD",
                     totalLinesInBase = factura.cantidadRegistros
-                )
+                ),registroFacturaRepository
             )
 
             if (progress != null && archivo != null) {
@@ -202,7 +202,7 @@ class DirectoryProcessorService(
                             archivo = archivo.name,
                             factura = factura.numFactura,
                             status = "COMPLETED"
-                        )
+                        ),registroFacturaRepository
                     )
                 } else {
                     moveToProcessed(archivo, failedDirectory)
@@ -212,13 +212,11 @@ class DirectoryProcessorService(
                             factura = factura.numFactura,
                             status = "ERROR",
                             numeroLinea = factura.cantidadRegistros
-                        )
+                        ),registroFacturaRepository
                     )
                 }
             }
         }
-
-
 
 
     }
@@ -228,29 +226,20 @@ class DirectoryProcessorService(
         logger.info("Procesando archivo LL en batch: ${file.name} (${file.length()} bytes)")
         val batchSize = 500 // Tamaño del lote
         val allSuccess = AtomicBoolean(true)
-
-        val mapper = jacksonObjectMapper()
         var lastProcessedLine: Long = 0
 
         // Leer el progreso guardado
-        val progresoFile = Utils.progresoFile
-        val progresoPrevio: ProgresoProceso? = try {
-            if (progresoFile.exists()) {
-                mapper.readValue<List<ProgresoProceso>>(
-                    progresoFile,
-                    object : TypeReference<List<ProgresoProceso>>() {})
-                    .find { it.archivo == file.name } // Buscar progreso para este archivo
-            } else {
-                null // El archivo no existe
-            }
+        val progresoPrevio: RegistroFactura? = try {
+            registroFacturaRepository.findByArchivo(file.name)
         } catch (e: Exception) {
-            logger.warn("Error leyendo archivo de progreso: ${e.message}", e)
-            null // En caso de error, retornar null
+            logger.warn("Error consultando progreso en base de datos: ${e.message}", e)
+            null
         }
+
 
         // Si hay progreso previo, tomar la línea de inicio
         if (progresoPrevio != null) {
-            lastProcessedLine = progresoPrevio.numeroLinea ?: 0
+            lastProcessedLine = progresoPrevio.numeroLinea
             logger.info("Reiniciando desde la línea ${lastProcessedLine + 1} para la factura ${progresoPrevio.archivo}")
             if (progresoPrevio.status.equals("COMPLETED", ignoreCase = true)) {
                 return
@@ -290,7 +279,7 @@ class DirectoryProcessorService(
                                         archivo = file.name,
                                         status = "PROGRESS",
                                         numeroLinea = batch.size.toLong(),
-                                    )
+                                    ),registroFacturaRepository
                                 )
                                 batch.clear()
                             }
@@ -309,7 +298,7 @@ class DirectoryProcessorService(
                                 archivo = file.name,
                                 status = "PROGRESS",
                                 numeroLinea = batch.size.toLong(),
-                            )
+                            ),registroFacturaRepository
                         )
                     }
                 }
@@ -322,7 +311,7 @@ class DirectoryProcessorService(
                         factura = numFactura,
                         archivo = file.name,
                         status = "COMPLETED",
-                    )
+                    ),registroFacturaRepository
                 )
                 logger.info("Archivo LL procesado exitosamente: ${file.name}")
             } else {
@@ -332,7 +321,7 @@ class DirectoryProcessorService(
                         factura = numFactura,
                         archivo = file.name,
                         status = "ERROR"
-                    )
+                    ),registroFacturaRepository
                 )
                 logger.warn("Archivo procesado con errores: ${file.name}")
             }
@@ -351,8 +340,8 @@ class DirectoryProcessorService(
             try {
                 transactionalService.guardarLoteLlamadas(batch, fileName)
                 logger.info("Se guardaron ${batch.size} registros del lote actual.")
-            } catch (_: TaskRejectedException) {
-                logger.error("Tarea rechazada para el archivo: $fileName. Reintentando...")
+            } catch (ex: TaskRejectedException) {
+                logger.error("Tarea rechazada para el archivo: $fileName. Reintentando...", ex)
                 // Reintentar después de un retraso (o usar una cola)
                 Thread.sleep(1000)
             }
@@ -396,6 +385,23 @@ class DirectoryProcessorService(
     @Async
     fun processBills() {
         facturasService.process(directory, processedDirectory, failedDirectory)
+    }
+
+    fun getDirectoryStatus(): Map<String, Int> {
+        val totalDirs = directory.listFiles { file -> file.isDirectory }?.toList() ?: emptyList()
+        val processed = processedDirectory.listFiles()?.size ?: 0
+        val failed = failedDirectory.listFiles()?.size ?: 0
+
+        // Los pendientes son los directorios que no están en processed ni failed
+        val processedNames = processedDirectory.list()?.toSet() ?: emptySet()
+        val failedNames = failedDirectory.list()?.toSet() ?: emptySet()
+        val pending = totalDirs.count { it.name !in processedNames && it.name !in failedNames }
+
+        return mapOf(
+            "processed" to processed,
+            "failed" to failed,
+            "pending" to pending
+        )
     }
 
 

@@ -27,10 +27,10 @@ class TransactionalService(
         try {
             llamadasRepository.saveAll(batch)
             logger.info("Lote del archivo $fileName insertado correctamente.")
-        } catch (_: DataIntegrityViolationException) {
-            logger.error("Conflicto de integridad en lote $fileName...")
-        } catch (_: Exception) {
-            logger.error("Error guardando lote del archivo $fileName")
+        } catch (ex: DataIntegrityViolationException) {
+            logger.error("Conflicto de integridad en lote $fileName...", ex)
+        } catch (ex: Exception) {
+            logger.error("Error guardando lote del archivo $fileName", ex)
         }
     }
 

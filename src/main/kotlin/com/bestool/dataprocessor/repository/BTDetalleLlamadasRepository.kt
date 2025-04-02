@@ -45,9 +45,10 @@ interface BTDetalleLlamadasRepository : JpaRepository<BTDetalleLlamadas, Long> {
             MAX(BDL_FECHA_CREACION) AS ULTIMA_FECHA, 
             COUNT(*) AS CANTIDAD_REGISTROS
         FROM BT_DETALLE_LLAMADAS
+        WHERE BDL_FECHA_CREACION >= ADD_MONTHS(TRUNC(SYSDATE), -1)
         GROUP BY BDL_NUM_FACTURA
         ORDER BY ULTIMA_FECHA DESC
-        """,
+    """,
         nativeQuery = true
     )
     fun findFacturasWithCountAndLastDate(): List<Map<String, Any>>

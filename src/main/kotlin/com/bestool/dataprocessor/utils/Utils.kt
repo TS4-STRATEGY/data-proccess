@@ -2,8 +2,8 @@ package com.bestool.dataprocessor.utils
 
 
 import com.bestool.dataprocessor.dto.ProgresoProceso
-import com.fasterxml.jackson.core.type.TypeReference
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.bestool.dataprocessor.entity.RegistroFactura
+import com.bestool.dataprocessor.repository.RegistroFacturaRepository
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.nio.file.Files
@@ -17,7 +17,6 @@ open class Utils {
     companion object {
 
         private val logger = LoggerFactory.getLogger(Utils::class.java)
-        val progresoFile = File("progreso.json")
 
         val monthMap = mapOf(
             "Jan" to "01", "Ene" to "01",
@@ -39,7 +38,7 @@ open class Utils {
                 try {
                     val parsedDate = SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH).parse(dateString)
                     return parsedDate
-                } catch (e: ParseException) {
+                } catch (_: ParseException) {
                     logger.warn("Failed to parse date with format: ${dateString.toPattern()}")
                 }
             }
@@ -58,7 +57,7 @@ open class Utils {
                 try {
                     val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
                     return formatter.parse(normalizedDate)// "yyyy-MM-dd"
-                } catch (e: ParseException) {
+                } catch (_: ParseException) {
                     logger.error("Failed to parse normalized date: $normalizedDate")
                 }
             }
@@ -153,7 +152,7 @@ open class Utils {
         fun parseDoubleOrDefault(value: String, defaultValue: Double, fileName: String, lineNumber: String): Double {
             return try {
                 value.toDouble()
-            } catch (e: NumberFormatException) {
+            } catch (_: NumberFormatException) {
                 logger.error(
                     "Invalid number format in file: $fileName, line: $lineNumber, value: $value. Using default value: $defaultValue"
                 )
@@ -213,92 +212,68 @@ open class Utils {
         }
 
 
-        fun saveProgress(progreso: ProgresoProceso): ProgresoProceso? {
+        fun saveProgress(progreso: ProgresoProceso, registroFacturaRepository: RegistroFacturaRepository): ProgresoProceso? {
             return try {
-                val mapper = jacksonObjectMapper()
-                val progresoList: MutableList<ProgresoProceso> = if (progresoFile.exists()) {
-                    mapper.readValue(progresoFile, object : TypeReference<MutableList<ProgresoProceso>>() {})
-                } else {
-                    mutableListOf()
+                val factura = progreso.factura ?: run {
+                    val parts = progreso.archivo?.split("-") ?: emptyList()
+                    parts.getOrNull(1).orEmpty() + parts.getOrNull(2).orEmpty().replace(".ll", "")
                 }
 
-                val updatedProgreso: ProgresoProceso
-
-                if (progreso.factura.isNullOrBlank()) {
-                    progreso.factura =
-                        (progreso.archivo?.split("-")?.getOrNull(1) + progreso.archivo?.split("-")?.getOrNull(2)
-                            ?.replace(".ll", ""))
+                val registroExistente = when (progreso.status) {
+                    "DOWNLOAD" -> registroFacturaRepository.findByFactura(factura)
+                    else -> registroFacturaRepository.findByArchivo(progreso.archivo.orEmpty())
                 }
 
-                // Actualizar o agregar progreso
-                val index = progresoList.indexOfFirst {
-                    when (progreso.status) {
-                        "DOWNLOAD" -> {
-                            it.factura == progreso.factura
-                        }
-
-                        else -> {
-                            it.archivo == progreso.archivo
-                        }
-                    }
-                }
-                if (index != -1) {
-                    // Obtener el elemento existente
-                    val existing = progresoList[index]
-
-                    // Crear una copia actualizada solo con los campos modificados (excluyendo factura)
+                val nuevoRegistro = if (registroExistente != null) {
                     when (progreso.status) {
                         "PROGRESS" -> {
-                            updatedProgreso = existing.copy(
-                                factura = progreso.factura.takeIf { !it.isNullOrBlank() } ?: existing.factura,
-                                status = progreso.status.ifBlank { existing.status },
-                                numeroLinea = existing.numeroLinea?.plus(progreso.numeroLinea ?: 0),
-                                totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 }
-                                    ?: existing.totalLinesFile,
-                                totalLinesInBase = progreso.totalLinesInBase
-                            )
+                            registroExistente.apply {
+                                this.factura = factura
+                                this.status = progreso.status
+                                this.numeroLinea += progreso.numeroLinea ?: 0
+                                this.totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 } ?: totalLinesFile
+                                this.totalLinesInBase = progreso.totalLinesInBase ?: totalLinesInBase
+                            }
                         }
-
                         "DOWNLOAD" -> {
-                            updatedProgreso = existing.copy(
-                                factura = progreso.factura.takeIf { !it.isNullOrBlank() } ?: existing.factura,
-                                status = if (progreso.totalLinesInBase == existing.totalLinesFile) "COMPLETED" else "ERROR",
-                                numeroLinea = progreso.totalLinesInBase,
-                                totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 }
-                                    ?: existing.totalLinesFile,
-                                totalLinesInBase = progreso.totalLinesInBase
-                            )
+                            registroExistente.apply {
+                                this.status = if (progreso.totalLinesInBase == totalLinesFile) "COMPLETED" else "ERROR"
+                                this.numeroLinea = progreso.totalLinesInBase ?: 0
+                                this.totalLinesFile = progreso.totalLinesFile ?: totalLinesFile
+                                this.totalLinesInBase = progreso.totalLinesInBase ?: totalLinesInBase
+                            }
                         }
-
                         else -> {
-                            updatedProgreso = existing.copy(
-                                factura = progreso.factura.takeIf { !it.isNullOrBlank() } ?: existing.factura,
-                                status = progreso.status.takeIf { !it.isNullOrBlank() } ?: existing.status,
-                                numeroLinea = progreso.numeroLinea.takeIf { it != null && it > 0 }
-                                    ?: existing.numeroLinea,
-                                totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 }
-                                    ?: existing.totalLinesFile,
-                                totalLinesInBase = progreso.totalLinesInBase.takeIf { it != null && it > 0 }
-                                    ?: existing.totalLinesInBase
-                            )
+                            registroExistente.apply {
+                                this.factura = factura
+                                this.status = progreso.status
+                                this.numeroLinea = progreso.numeroLinea ?: numeroLinea
+                                this.totalLinesFile = progreso.totalLinesFile ?: totalLinesFile
+                                this.totalLinesInBase = progreso.totalLinesInBase ?: totalLinesInBase
+                            }
                         }
                     }
-
-                    progresoList[index] = updatedProgreso
                 } else {
-                    // Si no existe, agregarlo a la lista
-                    progresoList.add(progreso)
-                    updatedProgreso = progreso
+                    RegistroFactura(
+                        factura = factura,
+                        archivo = progreso.archivo ?: "desconocido.ll",
+                        status = progreso.status,
+                        numeroLinea = progreso.numeroLinea ?: 0,
+                        totalLinesFile = progreso.totalLinesFile ?: 0,
+                        totalLinesInBase = progreso.totalLinesInBase ?: 0
+                    )
                 }
 
-                mapper.writeValue(progresoFile, progresoList)
-                logger.info("Progreso guardado: $updatedProgreso")
-                updatedProgreso // Retorna el progreso actualizado o añadido
+                registroFacturaRepository.save(nuevoRegistro)
+
+                logger.info("Progreso guardado en DB: $nuevoRegistro")
+                progreso.copy(factura = factura)
             } catch (e: Exception) {
-                logger.error("Error guardando progreso: ${e.message}")
-                null // Retorna null en caso de error
+                logger.error("Error guardando progreso en DB: ${e.message}")
+                null
             }
         }
+
 
 
     }

@@ -85,7 +85,7 @@ class UtilCaster {
                     localidad = poblacion.id,
                     fechaLlamada = parsedDate,
                     horaLlamada = values.getOrNull(6),
-                    duracion = values.getOrNull(7)?.toIntOrNull(),
+                    duracion = values.getOrNull(7)?.toDoubleOrNull(),
                     costo = cost,
                     cargoAdicional = values.getOrNull(9)?.toDoubleOrNull(),
                     tipoCargo = values.getOrNull(10),

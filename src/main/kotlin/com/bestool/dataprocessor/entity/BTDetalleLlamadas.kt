@@ -17,7 +17,7 @@ data class BTDetalleLlamadas(
     @Column(name = "BDL_LOCALIDAD") val localidad: Long,
     @Column(name = "BDL_FECHA_LLAMADA") val fechaLlamada: Date?,
     @Column(name = "BDL_HORA_LLAMADA") val horaLlamada: String?,
-    @Column(name = "BDL_DURACION") val duracion: Int?,
+    @Column(name = "BDL_DURACION", columnDefinition = "NUMBER") val duracion: Double?,
     @Column(name = "BDL_COSTO", columnDefinition = "NUMBER") val costo: Double?,
     @Column(name = "BDL_CARGO_ADICIONAL", columnDefinition = "NUMBER") val cargoAdicional: Double?,
     @Column(name = "BDL_TIPO_CARGO") val tipoCargo: String?,

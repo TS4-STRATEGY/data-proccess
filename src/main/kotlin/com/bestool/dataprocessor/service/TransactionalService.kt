@@ -29,8 +29,10 @@ class TransactionalService(
             logger.info("Lote del archivo $fileName insertado correctamente.")
         } catch (ex: DataIntegrityViolationException) {
             logger.error("Conflicto de integridad en lote $fileName...", ex)
+            throw ex // 👈 Esto es importante
         } catch (ex: Exception) {
             logger.error("Error guardando lote del archivo $fileName", ex)
+            throw ex // 👈 Esto también
         }
     }
 

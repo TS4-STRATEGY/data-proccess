@@ -55,7 +55,7 @@ class DirectoryProcessorController(private val directoryProcessorService: Direct
             val logDirectory = ensureLogDirectoryExists(BuildConfig.LOG_PATH)
             if (logDirectory.exists() && logDirectory.isDirectory) {
                 val lastModifiedFile = logDirectory.listFiles { file ->
-                    file.isFile && file.name.startsWith("application.") // Filtra solo los logs relevantes
+                    file.isFile && file.name.startsWith("data-collector-rolling.") // Filtra solo los logs relevantes
                 }?.maxByOrNull { it.lastModified() }
 
                 lastModifiedFile?.let { file ->

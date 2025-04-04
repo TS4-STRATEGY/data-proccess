@@ -16,6 +16,7 @@ import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.core.task.TaskRejectedException
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.scheduling.annotation.Async
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
@@ -340,15 +341,18 @@ class DirectoryProcessorService(
             try {
                 transactionalService.guardarLoteLlamadas(batch, fileName)
                 logger.info("Se guardaron ${batch.size} registros del lote actual.")
+            } catch (ex: DataIntegrityViolationException) {
+                logger.warn("Conflicto de integridad detectado en $fileName. El lote no fue guardado.")
             } catch (ex: TaskRejectedException) {
                 logger.error("Tarea rechazada para el archivo: $fileName. Reintentando...", ex)
-                // Reintentar después de un retraso (o usar una cola)
-                Thread.sleep(1000)
+            } catch (ex: Exception) {
+                logger.error("Error general procesando el archivo: $fileName", ex)
             }
         } else {
             logger.info("No hay registros nuevos para guardar.")
         }
     }
+
 
 
     fun restoreFiles(): String {

@@ -123,6 +123,8 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.4")
     implementation("ch.qos.logback:logback-classic:1.2.11")
+    implementation("org.slf4j:jul-to-slf4j:1.7.36")
+
     implementation("org.springframework.boot:spring-boot-starter-batch:2.6.14")
     implementation("org.springframework.boot:spring-boot-starter-actuator:2.6.14")
 

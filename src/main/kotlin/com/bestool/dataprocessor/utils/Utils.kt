@@ -245,7 +245,7 @@ open class Utils {
                                 this.status = if (progreso.totalLinesInBase == totalLinesFile) "COMPLETED" else "ERROR"
                                 this.archivo = valorArchivoSeguro(registroExistente.archivo, progreso.archivo)
                                 this.numeroLinea = progreso.totalLinesInBase ?: 0
-                                this.totalLinesFile = progreso.totalLinesFile ?: totalLinesFile
+                                this.totalLinesFile = registroExistente.totalLinesFile.takeIf { it > 0 } ?: (progreso.totalLinesFile ?: 0)
                                 this.totalLinesInBase = progreso.totalLinesInBase ?: totalLinesInBase
                             }
                         }
@@ -268,7 +268,7 @@ open class Utils {
                                 this.archivo = valorArchivoSeguro(registroExistente.archivo, progreso.archivo)
                                 this.status = progreso.status
                                 this.numeroLinea = progreso.numeroLinea ?: numeroLinea
-                                this.totalLinesFile = progreso.totalLinesFile ?: totalLinesFile
+                                this.totalLinesFile = registroExistente.totalLinesFile.takeIf { it > 0 } ?: (progreso.totalLinesFile ?: totalLinesFile)
                                 this.totalLinesInBase = progreso.totalLinesInBase ?: totalLinesInBase
                             }
                         }

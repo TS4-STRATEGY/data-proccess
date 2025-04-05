@@ -7,22 +7,23 @@ import com.bestool.dataprocessor.entity.BTDetalleLlamadas
 import com.bestool.dataprocessor.entity.RegistroFactura
 import com.bestool.dataprocessor.repository.BTDetalleLlamadasRepository
 import com.bestool.dataprocessor.repository.RegistroFacturaRepository
+import com.bestool.dataprocessor.utils.TransactionContext
 import com.bestool.dataprocessor.utils.UtilCaster.Companion.crearDetalleLlamadasEntity
-import com.bestool.dataprocessor.utils.Utils
 import com.bestool.dataprocessor.utils.Utils.Companion.moveFilesToRoot
 import com.bestool.dataprocessor.utils.Utils.Companion.moveToProcessed
 import com.bestool.dataprocessor.utils.Utils.Companion.saveProgress
-import com.fasterxml.jackson.core.type.TypeReference
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.core.task.TaskRejectedException
-import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.scheduling.annotation.Async
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
+import org.springframework.transaction.TransactionTimedOutException
 import java.io.File
+import java.time.LocalDateTime
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.annotation.PostConstruct
+import javax.persistence.RollbackException
+import javax.validation.ConstraintViolationException
 
 @Service
 class DirectoryProcessorService(
@@ -136,33 +137,28 @@ class DirectoryProcessorService(
             facturasService.process(directory, processedDirectory, failedDirectory)
             cargosService.process(directory, processedDirectory, failedDirectory)
             catalogosService.loadCache()
-            logger.info("PROCESANDO DETALLE DE LLAMADAS: ")
+            logger.info("4. PROCESANDO DETALLE DE LLAMADAS: ")
             val details = directory.walkTopDown()
                 .filter { it.isFile && it.extension.equals("ll", ignoreCase = true) }
                 .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }
                 .toList()
-                .sortedWith(compareBy<File> { it.length() } // Ordenar por tamaño primero
-                    .thenBy {
-                        if (it.name.contains(
-                                "part",
-                                ignoreCase = true
-                            )
-                        ) 1 else 0
-                    } // Luego, los que tienen 'partX' al final
+                .sortedWith(compareBy<File> { it.length() } // Ordenar por tamaño primero // Luego, los que tienen 'partX' al final
                     .thenBy { it.name })
-            logger.info("VERIFICANDO INTEGRIDAD: ")
+            logger.info("4. VERIFICANDO INTEGRIDAD: ")
             verificarFacturasConArchivos(details)
             details.forEach { file ->
                 try {
                     processLLBatchFile(file) // Cambiamos para usar batch
-                } catch (e: Exception) {
-                    logger.error("Error al procesar el archivo LL: ${file.name}", e)
+                } catch (ex: Exception) {
+                    logger.error("Error al procesar el archivo LL: ${file.name}", ex)
                     moveToProcessed(file, failedDirectory)
+                    throw ex
                 }
             }
-            logger.info("DATOS DE LLAMADA PROCESADOS")
-        } catch (e: Exception) {
-            logger.error("Error durante el procesamiento: ", e)
+            logger.info("4. DATOS DE LLAMADA PROCESADOS")
+        } catch (ex: Exception) {
+            logger.error("Error durante el procesamiento: ", ex)
+            throw ex
         }
 
     }
@@ -188,9 +184,10 @@ class DirectoryProcessorService(
                 ProgresoProceso(
                     factura = factura.numFactura,
                     status = "DOWNLOAD",
-                    totalLinesInBase = factura.cantidadRegistros
-                ),registroFacturaRepository
+                    totalLinesInBase = factura.cantidadRegistros,
+                ), registroFacturaRepository
             )
+
 
             if (progress != null && archivo != null) {
                 if (progress.totalLinesFile == factura.cantidadRegistros) {
@@ -203,7 +200,14 @@ class DirectoryProcessorService(
                             archivo = archivo.name,
                             factura = factura.numFactura,
                             status = "COMPLETED"
-                        ),registroFacturaRepository
+                        ), registroFacturaRepository
+                    )
+                } else if (progress.numeroLinea == progress.totalLinesInBase) {
+                    saveProgress(
+                        ProgresoProceso(
+                            factura = factura.numFactura,
+                            status = "COMPLETED"
+                        ), registroFacturaRepository
                     )
                 } else {
                     moveToProcessed(archivo, failedDirectory)
@@ -213,7 +217,7 @@ class DirectoryProcessorService(
                             factura = factura.numFactura,
                             status = "ERROR",
                             numeroLinea = factura.cantidadRegistros
-                        ),registroFacturaRepository
+                        ), registroFacturaRepository
                     )
                 }
             }
@@ -280,13 +284,14 @@ class DirectoryProcessorService(
                                         archivo = file.name,
                                         status = "PROGRESS",
                                         numeroLinea = batch.size.toLong(),
-                                    ),registroFacturaRepository
+                                    ), registroFacturaRepository
                                 )
                                 batch.clear()
                             }
-                        } catch (e: Exception) {
+                        } catch (ex: Exception) {
                             allSuccess.set(false)
-                            logger.error("Error procesando línea: $line", e)
+                            logger.error("Error procesando línea: $line", ex)
+                            throw ex // Opcional: detener el proceso completamente
                         }
                     }
 
@@ -299,7 +304,7 @@ class DirectoryProcessorService(
                                 archivo = file.name,
                                 status = "PROGRESS",
                                 numeroLinea = batch.size.toLong(),
-                            ),registroFacturaRepository
+                            ), registroFacturaRepository
                         )
                     }
                 }
@@ -312,7 +317,7 @@ class DirectoryProcessorService(
                         factura = numFactura,
                         archivo = file.name,
                         status = "COMPLETED",
-                    ),registroFacturaRepository
+                    ), registroFacturaRepository
                 )
                 logger.info("Archivo LL procesado exitosamente: ${file.name}")
             } else {
@@ -322,13 +327,14 @@ class DirectoryProcessorService(
                         factura = numFactura,
                         archivo = file.name,
                         status = "ERROR"
-                    ),registroFacturaRepository
+                    ), registroFacturaRepository
                 )
                 logger.warn("Archivo procesado con errores: ${file.name}")
             }
-        } catch (e: Exception) {
-            logger.error("Error procesando archivo LL: ${e.message}", e)
+        } catch (ex: Exception) {
+            logger.error("Error procesando archivo LL: ${ex.message}", ex)
             moveToProcessed(file, failedDirectory)
+            throw ex
         }
     }
 
@@ -341,18 +347,35 @@ class DirectoryProcessorService(
             try {
                 transactionalService.guardarLoteLlamadas(batch, fileName)
                 logger.info("Se guardaron ${batch.size} registros del lote actual.")
-            } catch (ex: DataIntegrityViolationException) {
-                logger.warn("Conflicto de integridad detectado en $fileName. El lote no fue guardado.")
+            } catch (ex: ConstraintViolationException) {
+                logger.error("Violación de restricciones al guardar el archivo: $fileName", ex)
+                ex.constraintViolations.forEach {
+                    logger.error("Campo: ${it.propertyPath} - Valor inválido: ${it.invalidValue} - Mensaje: ${it.message}")
+                }
+                throw ex  // <-- NECESARIO para que la transacción se marque como fallida
+            } catch (ex: RollbackException) {
+                logger.error("Se hizo rollback al procesar el archivo: $fileName", ex)
+                var cause = ex.cause
+                while (cause != null) {
+                    logger.error("Causa anidada: ${cause::class.java.name} - ${cause.message}")
+                    cause = cause.cause
+                }
+                throw ex
+            } catch (ex: TransactionTimedOutException) {
+                logger.error("La transacción expiró procesando: $fileName", ex)
+                throw ex
             } catch (ex: TaskRejectedException) {
                 logger.error("Tarea rechazada para el archivo: $fileName. Reintentando...", ex)
+                throw ex
             } catch (ex: Exception) {
+                TransactionContext.setException(ex)
                 logger.error("Error general procesando el archivo: $fileName", ex)
+                throw ex
             }
         } else {
             logger.info("No hay registros nuevos para guardar.")
         }
     }
-
 
 
     fun restoreFiles(): String {

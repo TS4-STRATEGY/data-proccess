@@ -13,7 +13,7 @@ class CargosService(private val cargosRepository: BTDetalleCargosRepository) {
     private val logger = LoggerFactory.getLogger(CargosService::class.java)
 
     fun process(directory: File, processedDirectory: File, failedDirectory: File) {
-        logger.info("PROCESANDO CARGOS: ")
+        logger.info("3. PROCESANDO CARGOS: ")
         val charges =
             directory.walkTopDown().filter { it.isFile && it.extension.equals("crg", ignoreCase = true) }
                 .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }.toList()
@@ -22,7 +22,7 @@ class CargosService(private val cargosRepository: BTDetalleCargosRepository) {
         charges.forEach { file ->
             processCRGFile(file,processedDirectory,failedDirectory)
         }
-        logger.info("CARGOS PROCESADOS")
+        logger.info("3. CARGOS PROCESADOS")
     }
 
     private fun processCRGFile(file: File, processedDirectory: File, failedDirectory: File) {

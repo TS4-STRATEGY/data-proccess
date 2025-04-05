@@ -12,7 +12,7 @@ class FacturasService(private val facturaRepository: BTDetalleFacturaRepository)
     private val logger = LoggerFactory.getLogger(FacturasService::class.java)
 
     fun process(directory: File, processedDirectory: File, failedDirectory: File) {
-        logger.info("PROCESANDO FACTURAS: ")
+        logger.info("2. PROCESANDO FACTURAS: ")
         val bills =
             directory.walkTopDown().filter { it.isFile && it.extension.equals("crt", ignoreCase = true) }
                 .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }.toList()
@@ -21,7 +21,7 @@ class FacturasService(private val facturaRepository: BTDetalleFacturaRepository)
         bills.forEach { file ->
             processCRTFile(file, processedDirectory, failedDirectory)
         }
-        logger.info("FACTURAS PROCESADAS")
+        logger.info("2. FACTURAS PROCESADAS")
     }
 
     private fun processCRTFile(file: File, processedDirectory: File, failedDirectory: File) {

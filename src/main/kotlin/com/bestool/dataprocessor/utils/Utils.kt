@@ -212,40 +212,60 @@ open class Utils {
         }
 
 
-        fun saveProgress(progreso: ProgresoProceso, registroFacturaRepository: RegistroFacturaRepository): ProgresoProceso? {
+        fun saveProgress(
+            progreso: ProgresoProceso,
+            registroFacturaRepository: RegistroFacturaRepository
+        ): ProgresoProceso? {
             return try {
                 val factura = progreso.factura ?: run {
                     val parts = progreso.archivo?.split("-") ?: emptyList()
                     parts.getOrNull(1).orEmpty() + parts.getOrNull(2).orEmpty().replace(".ll", "")
                 }
 
-                val registroExistente = when (progreso.status) {
-                    "DOWNLOAD" -> registroFacturaRepository.findByFactura(factura)
-                    else -> registroFacturaRepository.findByArchivo(progreso.archivo.orEmpty())
-                }
+                val registroExistente = registroFacturaRepository.findByFactura(factura)
+
 
                 val nuevoRegistro = if (registroExistente != null) {
                     when (progreso.status) {
-                        "PROGRESS" -> {
+                        "COUNT" -> {
                             registroExistente.apply {
                                 this.factura = factura
                                 this.status = progreso.status
-                                this.numeroLinea += progreso.numeroLinea ?: 0
-                                this.totalLinesFile = progreso.totalLinesFile.takeIf { it != null && it > 0 } ?: totalLinesFile
-                                this.totalLinesInBase = progreso.totalLinesInBase ?: totalLinesInBase
+                                this.archivo = valorArchivoSeguro(registroExistente.archivo, progreso.archivo)
+                                this.numeroLinea = 0
+                                this.totalLinesFile =
+                                    progreso.totalLinesFile.takeIf { it != null && it > 0 } ?: totalLinesFile
+                                this.totalLinesInBase = 0
                             }
                         }
+
                         "DOWNLOAD" -> {
                             registroExistente.apply {
+                                this.factura = factura
                                 this.status = if (progreso.totalLinesInBase == totalLinesFile) "COMPLETED" else "ERROR"
+                                this.archivo = valorArchivoSeguro(registroExistente.archivo, progreso.archivo)
                                 this.numeroLinea = progreso.totalLinesInBase ?: 0
                                 this.totalLinesFile = progreso.totalLinesFile ?: totalLinesFile
                                 this.totalLinesInBase = progreso.totalLinesInBase ?: totalLinesInBase
                             }
                         }
+
+                        "PROGRESS" -> {
+                            registroExistente.apply {
+                                this.factura = factura
+                                this.status = progreso.status
+                                this.archivo = valorArchivoSeguro(registroExistente.archivo, progreso.archivo)
+                                this.numeroLinea += progreso.numeroLinea ?: 0
+                                this.totalLinesFile =
+                                    progreso.totalLinesFile.takeIf { it != null && it > 0 } ?: totalLinesFile
+                                this.totalLinesInBase = progreso.totalLinesInBase ?: totalLinesInBase
+                            }
+                        }
+
                         else -> {
                             registroExistente.apply {
                                 this.factura = factura
+                                this.archivo = valorArchivoSeguro(registroExistente.archivo, progreso.archivo)
                                 this.status = progreso.status
                                 this.numeroLinea = progreso.numeroLinea ?: numeroLinea
                                 this.totalLinesFile = progreso.totalLinesFile ?: totalLinesFile
@@ -274,8 +294,11 @@ open class Utils {
             }
         }
 
-
+        fun valorArchivoSeguro(vararg opciones: String?): String {
+            return opciones.firstOrNull { !it.isNullOrBlank() } ?: "desconocido.ll"
+        }
 
     }
+
 
 }

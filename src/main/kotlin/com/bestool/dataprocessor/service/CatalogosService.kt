@@ -36,16 +36,17 @@ class CatalogosService(
                     .associateBy({ it.descripcion.uppercase(Locale.getDefault()) }, { it })
             )
             logger.info("Localidades y modalidades precargadas en caché.")
-        } catch (e: Exception) {
-            logger.error("Error al precargar los catálogos en caché", e)
+        } catch (ex: Exception) {
+            logger.error("Error al precargar los catálogos en caché", ex)
+            throw ex
         }
     }
 
     fun process(directory: File, processedDirectory: File, failedDirectory: File) {
         loadCache()
-        logger.info("PROCESANDO CATALOGOS: ")
+        logger.info("1. PROCESANDO CATALOGOS: ")
         val data = directory.walkTopDown().filter { it.isFile && it.extension.equals("ll", ignoreCase = true) }
-            .filterNot { it.parentFile.name.equals(processedDirectory.name, ignoreCase = true) }.toList()
+            .toList()
             .sortedBy { it.length() }
 
         removeDuplicates(data).forEach { file ->
@@ -56,7 +57,7 @@ class CatalogosService(
                 moveToProcessed(file, failedDirectory)
             }
         }
-        logger.info("CATALOGOS PROCESADOS")
+        logger.info("1. CATALOGOS PROCESADOS")
     }
 
     private fun processLLFile(file: File) {
@@ -79,7 +80,7 @@ class CatalogosService(
                 archivo = file.name,
                 status = "COUNT",
                 totalLinesFile = lineCount.toLong()
-            ),registroFacturaRepository
+            ), registroFacturaRepository
         )
     }
 
@@ -126,7 +127,7 @@ class CatalogosService(
 
         } catch (ex: Exception) {
             logger.error("Error processing record: $values", ex)
-
+            throw ex
         }
     }
 

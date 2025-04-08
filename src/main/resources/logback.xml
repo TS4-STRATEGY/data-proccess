@@ -1,19 +1,18 @@
 <configuration>
     <property name="LOG_PATH" value="/u01/oracle/apps/bestool/logs" />
 
-    <!-- Appender para consola -->
+    <!-- Appender consola -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
 
-    <!-- Appender de archivo rotativo -->
+    <!-- Appender archivo principal -->
     <appender name="ROLLING_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_PATH}/data-collector-rolling.log</file>
+        <file>${LOG_PATH}/data-collector.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-            <!-- Log diario con rotación por tamaño (200MB máx por archivo) -->
-            <fileNamePattern>${LOG_PATH}/data-collector-rolling.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <fileNamePattern>${LOG_PATH}/data-collector.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
             <maxFileSize>200MB</maxFileSize>
             <maxHistory>15</maxHistory>
             <totalSizeCap>2GB</totalSizeCap>
@@ -23,42 +22,67 @@
             <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
-    <!-- Logueo más detallado solo para tu proyecto -->
-    <logger name="com.bestool.dataprocessor" level="INFO" additivity="false">
-        <appender-ref ref="ROLLING_FILE" />
-        <appender-ref ref="CONSOLE" />
+
+    <!-- Appender exclusivo para SQL -->
+    <appender name="SQL_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/sql.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/sql.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>2</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="OracleErrorLogger" level="ERROR" additivity="false">
+        <appender-ref ref="SQL_ERRORS"/>
     </logger>
 
-    <logger name="com.bestool.dataprocessor.DirectoryProcessorService" level="DEBUG" additivity="false">
-        <appender-ref ref="ROLLING_FILE" />
-        <appender-ref ref="CONSOLE" />
-    </logger>
-    <!-- Nivel global de logs -->
-    <root level="ERROR">
-        <appender-ref ref="CONSOLE" />
-        <appender-ref ref="ROLLING_FILE" />
-    </root>
+    <appender name="SQL_ERRORS" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/sql-errors.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/sql-errors.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>10</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSS} - %msg%n</pattern>
+        </encoder>
+    </appender>
 
-    <logger name="weblogic.transaction" level="ERROR" additivity="false">
-        <appender-ref ref="ROLLING_FILE"/>
-        <appender-ref ref="CONSOLE"/>
+    <!-- Hibernate SQL -->
+    <logger name="org.hibernate.SQL" level="DEBUG" additivity="false">
+        <appender-ref ref="SQL_FILE" />
     </logger>
+
+    <!-- Hibernate parámetros -->
+    <logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="TRACE" additivity="false">
+        <appender-ref ref="SQL_FILE" />
+    </logger>
+
+    <!-- Hibernate errores -->
     <logger name="org.hibernate.engine.jdbc.spi.SqlExceptionHelper" level="ERROR" additivity="false">
         <appender-ref ref="ROLLING_FILE" />
         <appender-ref ref="CONSOLE" />
     </logger>
-    <logger name="org.hibernate" level="ERROR" additivity="false">
+
+    <!-- Proyecto -->
+    <logger name="com.bestool.dataprocessor" level="DEBUG" additivity="false">
         <appender-ref ref="ROLLING_FILE" />
         <appender-ref ref="CONSOLE" />
     </logger>
 
-    <logger name="org.hibernate.SQL" level="ERROR"/>
-    <logger name="org.hibernate.transaction" level="ERROR"/>
-    <logger name="org.hibernate.type" level="ERROR"/>
-    <logger name="org.hibernate.engine.transaction" level="DEBUG" />
-    <logger name="org.springframework.transaction.interceptor.TransactionInterceptor" level="DEBUG" />
-    <logger name="org.springframework.orm.jpa.JpaTransactionManager" level="DEBUG" />
-    <logger name="org.springframework.dao" level="DEBUG" />
-    <logger name="javax.persistence" level="DEBUG" />
+    <!-- Weblogic -->
+    <logger name="weblogic.transaction" level="ERROR" additivity="false">
+        <appender-ref ref="ROLLING_FILE"/>
+        <appender-ref ref="CONSOLE"/>
+    </logger>
 
+    <!-- Root -->
+    <root level="ERROR">
+        <appender-ref ref="ROLLING_FILE" />
+        <appender-ref ref="CONSOLE" />
+    </root>
 </configuration>

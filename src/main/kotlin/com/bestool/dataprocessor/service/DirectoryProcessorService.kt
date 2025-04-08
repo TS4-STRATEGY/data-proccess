@@ -1,6 +1,7 @@
 package com.bestool.dataprocessor.service
 
 import com.bestool.dataprocessor.BuildConfig
+import com.bestool.dataprocessor.DynamicSQLInspector
 import com.bestool.dataprocessor.dto.FacturaDTO
 import com.bestool.dataprocessor.dto.ProgresoProceso
 import com.bestool.dataprocessor.entity.BTDetalleLlamadas
@@ -368,8 +369,10 @@ class DirectoryProcessorService(
                 logger.error("Tarea rechazada para el archivo: $fileName. Reintentando...", ex)
                 throw ex
             } catch (ex: Exception) {
-                TransactionContext.setException(ex)
+                val lastSQL = DynamicSQLInspector.getLastSQL()
                 logger.error("Error general procesando el archivo: $fileName", ex)
+                logger.error("Último SQL ejecutado antes del error:\n$lastSQL")
+                TransactionContext.setException(ex)
                 throw ex
             }
         } else {

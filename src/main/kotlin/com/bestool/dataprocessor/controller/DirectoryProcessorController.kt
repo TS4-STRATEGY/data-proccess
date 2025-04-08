@@ -55,7 +55,7 @@ class DirectoryProcessorController(private val directoryProcessorService: Direct
             val logDirectory = ensureLogDirectoryExists(BuildConfig.LOG_PATH)
             if (logDirectory.exists() && logDirectory.isDirectory) {
                 val lastModifiedFile = logDirectory.listFiles { file ->
-                    file.isFile && file.name.startsWith("data-collector-rolling.") // Filtra solo los logs relevantes
+                    file.isFile && file.name.startsWith("data-collector.") // Filtra solo los logs relevantes
                 }?.maxByOrNull { it.lastModified() }
 
                 lastModifiedFile?.let { file ->
@@ -89,6 +89,48 @@ class DirectoryProcessorController(private val directoryProcessorService: Direct
                 .body("Error al buscar el archivo: ${e.message}")
         }
     }
+
+    @GetMapping("/sql-logs")
+    fun getLastErrorSQL(@RequestParam(required = false) lines: Int?): ResponseEntity<*> {
+        return try {
+            val logDirectory = ensureLogDirectoryExists(BuildConfig.LOG_PATH)
+            if (logDirectory.exists() && logDirectory.isDirectory) {
+                val lastModifiedFile = logDirectory.listFiles { file ->
+                    file.isFile && file.name.startsWith("sql.") // Filtra solo los logs relevantes
+                }?.maxByOrNull { it.lastModified() }
+
+                lastModifiedFile?.let { file ->
+                    if (lines == null || lines <= 0 && file.length() > maxLogSizeForInlineView) {
+                        // Si el archivo es demasiado grande, ofrecer descarga
+                        val resource = InputStreamResource(FileInputStream(file))
+                        val headers = HttpHeaders().apply {
+                            add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=${file.name}")
+                        }
+                        return ResponseEntity.ok()
+                            .headers(headers)
+                            .contentLength(file.length())
+                            .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                            .body(resource)
+                    } else {
+                        // Si el archivo es pequeño, mostrar contenido inline
+                        val content = file.useLines { allLines ->
+                            allLines.toList().takeLast(lines).joinToString("\n")
+                        }
+
+                        ResponseEntity.ok(content)
+                    }
+                } ?: ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body("No se encontraron archivos de log en la carpeta especificada")
+            } else {
+                ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body("La carpeta de logs no existe o no es un directorio válido")
+            }
+        } catch (e: IOException) {
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body("Error al buscar el archivo: ${e.message}")
+        }
+    }
+
 
     @GetMapping("/tree")
     fun getDirectoryTree(): ResponseEntity<String> {

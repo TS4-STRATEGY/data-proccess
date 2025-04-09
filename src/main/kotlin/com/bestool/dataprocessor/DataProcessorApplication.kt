@@ -1,5 +1,6 @@
 package com.bestool.dataprocessor
 
+import org.mybatis.spring.annotation.MapperScan
 import org.slf4j.bridge.SLF4JBridgeHandler
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
@@ -9,6 +10,7 @@ import java.util.logging.LogManager
 
 @SpringBootApplication(scanBasePackages = ["com.bestool"])
 @PropertySource("classpath:application.properties")
+@MapperScan("com.bestool.dataprocessor.mapper")
 @EnableAsync
 class DataProcessorApplication
 

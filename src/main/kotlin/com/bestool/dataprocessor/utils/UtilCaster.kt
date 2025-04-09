@@ -1,7 +1,7 @@
 package com.bestool.dataprocessor.utils
 
+import com.bestool.dataprocessor.dto.BatisTDetalleLlamadas
 import com.bestool.dataprocessor.entity.BTDetalleFactura
-import com.bestool.dataprocessor.entity.BTDetalleLlamadas
 import com.bestool.dataprocessor.entity.CatPoblacion
 import com.bestool.dataprocessor.entity.CatTipoLlamada
 import com.bestool.dataprocessor.repository.BTDetalleFacturaRepository
@@ -34,7 +34,7 @@ class UtilCaster {
             catPoblacionRepository: CatPoblacionRepository,
             modalidadesCache: ConcurrentHashMap<String, CatTipoLlamada>,
             catTipoLlamadaRepository: CatTipoLlamadaRepository
-        ): BTDetalleLlamadas? {
+        ): BatisTDetalleLlamadas? {
             return try {
 
                 val localidadDescripcion = values.getOrNull(4)?.uppercase() ?: "VACÍO"
@@ -77,7 +77,7 @@ class UtilCaster {
                 val cost = parseDoubleOrDefault(values.getOrNull(8) ?: "0.0", 0.0, "fileName", "lineNumber")
 
 
-                BTDetalleLlamadas(
+                BatisTDetalleLlamadas(
                     numFactura = values[0],
                     operador = values.getOrNull(1),
                     numOrigen = values.getOrNull(2),
@@ -93,7 +93,7 @@ class UtilCaster {
                     clasificacion = values.getOrNull(12),
                     fechaCreacion = Date(),
                     activo = 1,
-                    idCentroCostos = values.getOrNull(15)?.toIntOrNull()
+                    idCentroCostos = values.getOrNull(15)?.toIntOrNull(),
                 )
 
             } catch (e: Exception) {

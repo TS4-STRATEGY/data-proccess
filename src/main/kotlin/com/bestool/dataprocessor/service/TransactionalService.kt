@@ -1,68 +1,40 @@
 package com.bestool.dataprocessor.service
 
-import com.bestool.dataprocessor.entity.BTDetalleLlamadas
-import com.bestool.dataprocessor.repository.BTDetalleLlamadasRepository
-import com.bestool.dataprocessor.utils.TransactionContext
+import com.bestool.dataprocessor.dto.BatisTDetalleLlamadas
+import com.bestool.dataprocessor.mapper.DetalleLlamadasMapper
 import org.slf4j.LoggerFactory
-import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
-import org.springframework.transaction.support.TransactionSynchronization
-import org.springframework.transaction.support.TransactionSynchronizationManager
+import java.sql.SQLException
 import javax.transaction.Transactional
 
 @Service
 class TransactionalService(
-    private val llamadasRepository: BTDetalleLlamadasRepository,
+    private val detalleLlamadasMapper: DetalleLlamadasMapper
 ) {
 
     private val logger = LoggerFactory.getLogger(TransactionalService::class.java)
 
-
     @Transactional
-    fun guardarLoteLlamadas(
-        batch: List<BTDetalleLlamadas>,
-        fileName: String,
-    ) {
-        if (batch.isEmpty()) {
-            logger.info("No hay registros nuevos para insertar.")
-            return
-        }
+    fun guardarBatchMyBatis(batch: List<BatisTDetalleLlamadas>, fileName: String) {
         try {
-            llamadasRepository.saveAll(batch)
-            logger.info("Lote del archivo $fileName insertado correctamente.")
 
-            if (TransactionSynchronizationManager.isSynchronizationActive()) {
-                TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
-                    override fun afterCompletion(status: Int) {
-                        val statusText = when (status) {
-                            TransactionSynchronization.STATUS_COMMITTED -> "COMMIT"
-                            TransactionSynchronization.STATUS_ROLLED_BACK -> "ROLLBACK"
-                            else -> "DESCONOCIDO"
-                        }
+            val nextId = detalleLlamadasMapper.getNextDetalleLlamadaId()
+            var currentId = nextId
 
-                        logger.warn("[$fileName] -> La transacción finalizó con estado: $statusText")
-
-                        if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
-                            val ex = TransactionContext.getException()
-                            if (ex != null) {
-                                logger.error("[$fileName] -> Rollback causado por excepción:", ex)
-                            } else {
-                                logger.warn("[$fileName] -> Rollback sin excepción capturada.")
-                            }
-                        }
-
-                        TransactionContext.clear()
-                    }
-                })
-            } else {
-                logger.warn("[$fileName] -> No hay sincronización activa para registrar el listener de transacción.")
+            val itemsConId = batch.map { item ->
+                item.copy(id = currentId++ ) // asumiendo que tu DTO permite `.copy()`
             }
+            detalleLlamadasMapper.insertBatch(itemsConId)
 
-        } catch (ex: DataIntegrityViolationException) {
-            logger.error("Conflicto de integridad en lote $fileName...", ex)
+        } catch (ex: SQLException) {
+            logger.error("❌ Error SQL al guardar con MyBatis: ${ex.message}")
+            logger.error("Código de error: ${ex.errorCode}")
+            if (ex.message?.contains("ORA-") == true) {
+                logger.error("❌ ORACLE ERROR $fileName - ${ex.message}", ex)
+            }
             throw ex
         } catch (ex: Exception) {
-            logger.error("Error guardando lote del archivo $fileName", ex)
+            logger.error("❌ Error general al guardar con MyBatis", ex)
             throw ex
         }
     }

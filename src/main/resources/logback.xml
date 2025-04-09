@@ -52,16 +52,6 @@
         </encoder>
     </appender>
 
-    <!-- Hibernate SQL -->
-    <logger name="org.hibernate.SQL" level="DEBUG" additivity="false">
-        <appender-ref ref="SQL_FILE" />
-    </logger>
-
-    <!-- Hibernate parámetros -->
-    <logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="TRACE" additivity="false">
-        <appender-ref ref="SQL_FILE" />
-    </logger>
-
     <!-- Hibernate errores -->
     <logger name="org.hibernate.engine.jdbc.spi.SqlExceptionHelper" level="ERROR" additivity="false">
         <appender-ref ref="ROLLING_FILE" />
@@ -69,7 +59,7 @@
     </logger>
 
     <!-- Proyecto -->
-    <logger name="com.bestool.dataprocessor" level="DEBUG" additivity="false">
+    <logger name="com.bestool.dataprocessor" level="INFO" additivity="false">
         <appender-ref ref="ROLLING_FILE" />
         <appender-ref ref="CONSOLE" />
     </logger>
@@ -85,4 +75,20 @@
         <appender-ref ref="ROLLING_FILE" />
         <appender-ref ref="CONSOLE" />
     </root>
+
+    <root level="INFO">
+        <appender-ref ref="ROLLING_FILE" />
+        <appender-ref ref="CONSOLE" />
+    </root>
+
+    <logger name="org.mybatis" level="ERROR" additivity="false">
+        <appender-ref ref="SQL_FILE" />
+    </logger>
+    <logger name="org.apache.ibatis" level="ERROR" additivity="false">
+        <appender-ref ref="SQL_FILE" />
+    </logger>
+    <logger name="com.bestool.dataprocessor.mapper" level="ERROR" additivity="false">
+        <appender-ref ref="SQL_FILE" />
+    </logger>
+
 </configuration>

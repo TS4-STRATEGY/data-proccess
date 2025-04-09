@@ -2,6 +2,7 @@ package com.bestool.dataprocessor.service
 
 import com.bestool.dataprocessor.BuildConfig
 import com.bestool.dataprocessor.DynamicSQLInspector
+import com.bestool.dataprocessor.dto.BatisTDetalleLlamadas
 import com.bestool.dataprocessor.dto.FacturaDTO
 import com.bestool.dataprocessor.dto.ProgresoProceso
 import com.bestool.dataprocessor.entity.BTDetalleLlamadas
@@ -257,7 +258,7 @@ class DirectoryProcessorService(
 
         try {
             file.bufferedReader().use { reader ->
-                val batch = mutableListOf<BTDetalleLlamadas>()
+                val batch = mutableListOf<BatisTDetalleLlamadas>()
                 reader.useLines { lines ->
                     lines.drop(lastProcessedLine.toInt()).forEachIndexed { _, line ->
                         try {
@@ -341,13 +342,12 @@ class DirectoryProcessorService(
 
     //Guardar el batch filtrado
     private fun guardarLoteFiltrado(
-        batch: List<BTDetalleLlamadas>,
+        batch: List<BatisTDetalleLlamadas>,
         fileName: String
     ) {
         if (batch.isNotEmpty()) {
             try {
-                transactionalService.guardarLoteLlamadas(batch, fileName)
-                logger.info("Se guardaron ${batch.size} registros del lote actual.")
+                transactionalService.guardarBatchMyBatis(batch, fileName)
             } catch (ex: ConstraintViolationException) {
                 logger.error("Violación de restricciones al guardar el archivo: $fileName", ex)
                 ex.constraintViolations.forEach {

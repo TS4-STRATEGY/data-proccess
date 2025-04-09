@@ -111,6 +111,7 @@ dependencies {
     }
 
     implementation("org.springdoc:springdoc-openapi-ui:1.6.14")
+    implementation ("org.mybatis.spring.boot:mybatis-spring-boot-starter:2.1.4")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.13.4")
     implementation("com.fasterxml.jackson.core:jackson-core:2.13.4")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.4")

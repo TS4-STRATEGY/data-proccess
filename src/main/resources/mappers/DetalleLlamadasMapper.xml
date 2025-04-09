@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.bestool.dataprocessor.mapper.DetalleLlamadasMapper">
+
+    <insert id="insertBatch" parameterType="java.util.List">
+        INSERT ALL
+        <foreach collection="list" item="item">
+            INTO BT_DETALLE_LLAMADAS (
+            BDL_ID,
+            BDL_NUM_FACTURA,
+            BDL_OPERADOR,
+            BDL_NUM_ORIGEN,
+            BDL_NUM_DESTINO,
+            BDL_LOCALIDAD,
+            BDL_FECHA_LLAMADA,
+            BDL_HORA_LLAMADA,
+            BDL_DURACION,
+            BDL_COSTO,
+            BDL_CARGO_ADICIONAL,
+            BDL_TIPO_CARGO,
+            BDL_MODALIDAD,
+            BDL_CLASIFICACION,
+            BDL_FECHA_CREACION,
+            BDL_ACTIVO,
+            BDL_ID_CENTRO_COSTOS,
+            VERSION
+            ) VALUES  (
+            #{item.id, jdbcType=NUMERIC},
+            #{item.numFactura, jdbcType=VARCHAR},
+            #{item.operador, jdbcType=VARCHAR},
+            #{item.numOrigen, jdbcType=VARCHAR},
+            #{item.numDestino, jdbcType=VARCHAR},
+            #{item.localidad, jdbcType=NUMERIC},
+            #{item.fechaLlamada, jdbcType=TIMESTAMP},
+            #{item.horaLlamada, jdbcType=VARCHAR},
+            #{item.duracion, jdbcType=NUMERIC},
+            #{item.costo, jdbcType=DECIMAL},
+            #{item.cargoAdicional, jdbcType=DECIMAL},
+            #{item.tipoCargo, jdbcType=VARCHAR},
+            #{item.modalidad, jdbcType=NUMERIC},
+            #{item.clasificacion, jdbcType=VARCHAR},
+            #{item.fechaCreacion, jdbcType=TIMESTAMP},
+            #{item.activo, jdbcType=NUMERIC},
+            #{item.idCentroCostos, jdbcType=NUMERIC},
+            #{item.version, jdbcType=NUMERIC}
+            )
+        </foreach>
+        SELECT 1 FROM DUAL
+    </insert>
+
+</mapper>

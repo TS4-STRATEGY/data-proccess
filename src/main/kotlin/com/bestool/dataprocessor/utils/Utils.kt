@@ -267,9 +267,9 @@ open class Utils {
                                 this.factura = factura
                                 this.archivo = valorArchivoSeguro(registroExistente.archivo, progreso.archivo)
                                 this.status = progreso.status
-                                this.numeroLinea = progreso.numeroLinea ?: numeroLinea
+                                this.numeroLinea = registroExistente.numeroLinea.takeIf { it > 0 } ?: (progreso.numeroLinea ?: numeroLinea)
                                 this.totalLinesFile = registroExistente.totalLinesFile.takeIf { it > 0 } ?: (progreso.totalLinesFile ?: totalLinesFile)
-                                this.totalLinesInBase = progreso.totalLinesInBase ?: totalLinesInBase
+                                this.totalLinesInBase = registroExistente.totalLinesInBase.takeIf { it > 0 } ?: (progreso.totalLinesInBase ?: totalLinesInBase)
                             }
                         }
                     }
